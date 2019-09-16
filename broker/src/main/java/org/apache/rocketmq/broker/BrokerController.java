@@ -721,6 +721,7 @@ public class BrokerController {
         } catch (InterruptedException e) {
         }
 
+        // 从NameServer中注销Broker
         this.unregisterBrokerAll();
 
         if (this.sendMessageExecutor != null) {

@@ -320,16 +320,20 @@ public class DefaultRequestProcessor implements NettyRequestProcessor {
 
     public RemotingCommand unregisterBroker(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
+        // 创建响应
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
+        // 解析请求
         final UnRegisterBrokerRequestHeader requestHeader =
             (UnRegisterBrokerRequestHeader) request.decodeCommandCustomHeader(UnRegisterBrokerRequestHeader.class);
 
+        // 注销Broker
         this.namesrvController.getRouteInfoManager().unregisterBroker(
             requestHeader.getClusterName(),
             requestHeader.getBrokerAddr(),
             requestHeader.getBrokerName(),
             requestHeader.getBrokerId());
 
+        // 返回
         response.setCode(ResponseCode.SUCCESS);
         response.setRemark(null);
         return response;
@@ -337,20 +341,26 @@ public class DefaultRequestProcessor implements NettyRequestProcessor {
 
     public RemotingCommand getRouteInfoByTopic(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
+        // 构造响应
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
+        // 解析请求
         final GetRouteInfoRequestHeader requestHeader =
             (GetRouteInfoRequestHeader) request.decodeCommandCustomHeader(GetRouteInfoRequestHeader.class);
 
+        // 获取路由信息
         TopicRouteData topicRouteData = this.namesrvController.getRouteInfoManager().pickupTopicRouteData(requestHeader.getTopic());
 
         if (topicRouteData != null) {
+            // 支持顺序消息
             if (this.namesrvController.getNamesrvConfig().isOrderMessageEnable()) {
+                // 从KV配置中读取topic的顺序消息配置，设置返回值
                 String orderTopicConf =
                     this.namesrvController.getKvConfigManager().getKVConfig(NamesrvUtil.NAMESPACE_ORDER_TOPIC_CONFIG,
                         requestHeader.getTopic());
                 topicRouteData.setOrderTopicConf(orderTopicConf);
             }
 
+            // 组装返回
             byte[] content = topicRouteData.encode();
             response.setBody(content);
             response.setCode(ResponseCode.SUCCESS);
@@ -358,6 +368,7 @@ public class DefaultRequestProcessor implements NettyRequestProcessor {
             return response;
         }
 
+        // 未找到路由信息，返回
         response.setCode(ResponseCode.TOPIC_NOT_EXIST);
         response.setRemark("No topic route info in name server for the topic: " + requestHeader.getTopic()
             + FAQUrl.suggestTodo(FAQUrl.APPLY_TOPIC_URL));
