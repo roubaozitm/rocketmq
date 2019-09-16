@@ -179,7 +179,7 @@ public class DefaultRequestProcessor implements NettyRequestProcessor {
     }
 
     /**
-     * NameServer注册Broker代码
+     * NameServer注册Broker
      * @param ctx
      * @param request
      * @return
@@ -187,17 +187,21 @@ public class DefaultRequestProcessor implements NettyRequestProcessor {
      */
     public RemotingCommand registerBrokerWithFilterServer(ChannelHandlerContext ctx, RemotingCommand request)
         throws RemotingCommandException {
+        // 构造返回响应
         final RemotingCommand response = RemotingCommand.createResponseCommand(RegisterBrokerResponseHeader.class);
         final RegisterBrokerResponseHeader responseHeader = (RegisterBrokerResponseHeader) response.readCustomHeader();
+        // 解析请求
         final RegisterBrokerRequestHeader requestHeader =
             (RegisterBrokerRequestHeader) request.decodeCommandCustomHeader(RegisterBrokerRequestHeader.class);
 
+        // 校验请求
         if (!checksum(ctx, request, requestHeader)) {
             response.setCode(ResponseCode.SYSTEM_ERROR);
             response.setRemark("crc32 not match");
             return response;
         }
 
+        // 解析请求体
         RegisterBrokerBody registerBrokerBody = new RegisterBrokerBody();
 
         if (request.getBody() != null) {
@@ -211,6 +215,7 @@ public class DefaultRequestProcessor implements NettyRequestProcessor {
             registerBrokerBody.getTopicConfigSerializeWrapper().getDataVersion().setTimestamp(0);
         }
 
+        // 开始注册
         RegisterBrokerResult result = this.namesrvController.getRouteInfoManager().registerBroker(
             requestHeader.getClusterName(),
             requestHeader.getBrokerAddr(),
@@ -221,6 +226,7 @@ public class DefaultRequestProcessor implements NettyRequestProcessor {
             registerBrokerBody.getFilterServerList(),
             ctx.channel());
 
+        // 构造返回信息
         responseHeader.setHaServerAddr(result.getHaServerAddr());
         responseHeader.setMasterAddr(result.getMasterAddr());
 

@@ -113,6 +113,7 @@ public class RouteInfoManager {
             try {
                 this.lock.writeLock().lockInterruptibly();
 
+                // 添加brokerName
                 Set<String> brokerNames = this.clusterAddrTable.get(clusterName);
                 if (null == brokerNames) {
                     brokerNames = new HashSet<String>();
@@ -120,8 +121,10 @@ public class RouteInfoManager {
                 }
                 brokerNames.add(brokerName);
 
+                // 是否首次注册
                 boolean registerFirst = false;
 
+                // 添加Broker基础信息
                 BrokerData brokerData = this.brokerAddrTable.get(brokerName);
                 if (null == brokerData) {
                     registerFirst = true;
@@ -129,8 +132,8 @@ public class RouteInfoManager {
                     this.brokerAddrTable.put(brokerName, brokerData);
                 }
                 Map<Long, String> brokerAddrsMap = brokerData.getBrokerAddrs();
-                //Switch slave to master: first remove <1, IP:PORT> in namesrv, then add <0, IP:PORT>
-                //The same IP:PORT must only have one record in brokerAddrTable
+                // 从切换成主：首先移除NameServer中的<1, IP:PORT>，然后添加<0, IP:PORT>
+                // 在brokerAddrTable中相同的IP:PORT必须仅有一条记录
                 Iterator<Entry<Long, String>> it = brokerAddrsMap.entrySet().iterator();
                 while (it.hasNext()) {
                     Entry<Long, String> item = it.next();
@@ -139,9 +142,15 @@ public class RouteInfoManager {
                     }
                 }
 
+                // 设置Broker基础信息中的Broker主从地址信息
                 String oldAddr = brokerData.getBrokerAddrs().put(brokerId, brokerAddr);
                 registerFirst = registerFirst || (null == oldAddr);
 
+                // 更新Broker中的队列信息
+                // 更新条件：
+                // 1.该Broker为主
+                // 2.主题版本与NameServer的主题版本不一致
+                // 3.首次注册
                 if (null != topicConfigWrapper
                     && MixAll.MASTER_ID == brokerId) {
                     if (this.isBrokerTopicConfigChanged(brokerAddr, topicConfigWrapper.getDataVersion())
@@ -156,6 +165,7 @@ public class RouteInfoManager {
                     }
                 }
 
+                // 更新Broker状态信息
                 BrokerLiveInfo prevBrokerLiveInfo = this.brokerLiveTable.put(brokerAddr,
                     new BrokerLiveInfo(
                         System.currentTimeMillis(),
@@ -166,6 +176,7 @@ public class RouteInfoManager {
                     log.info("new broker registered, {} HAServer: {}", brokerAddr, haServerAddr);
                 }
 
+                // Broker上的FilterServer列表
                 if (filterServerList != null) {
                     if (filterServerList.isEmpty()) {
                         this.filterServerTable.remove(brokerAddr);
@@ -174,6 +185,7 @@ public class RouteInfoManager {
                     }
                 }
 
+                // 若为从，返回结果中添加主的信息
                 if (MixAll.MASTER_ID != brokerId) {
                     String masterAddr = brokerData.getBrokerAddrs().get(MixAll.MASTER_ID);
                     if (masterAddr != null) {
