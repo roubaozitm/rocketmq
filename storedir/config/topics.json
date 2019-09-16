@@ -1,9 +1,18 @@
 {
 	"dataVersion":{
-		"counter":1,
-		"timestamp":1567982246731
+		"counter":3,
+		"timestamp":1568604426790
 	},
 	"topicConfigTable":{
+		"TopicTest":{
+			"order":false,
+			"perm":6,
+			"readQueueNums":4,
+			"topicFilterType":"SINGLE_TAG",
+			"topicName":"TopicTest",
+			"topicSysFlag":0,
+			"writeQueueNums":4
+		},
 		"SELF_TEST_TOPIC":{
 			"order":false,
 			"perm":6,
@@ -64,6 +73,15 @@
 			"readQueueNums":1,
 			"topicFilterType":"SINGLE_TAG",
 			"topicName":"OFFSET_MOVED_EVENT",
+			"topicSysFlag":0,
+			"writeQueueNums":1
+		},
+		"%RETRY%please_rename_unique_group_name_4":{
+			"order":false,
+			"perm":6,
+			"readQueueNums":1,
+			"topicFilterType":"SINGLE_TAG",
+			"topicName":"%RETRY%please_rename_unique_group_name_4",
 			"topicSysFlag":0,
 			"writeQueueNums":1
 		}
