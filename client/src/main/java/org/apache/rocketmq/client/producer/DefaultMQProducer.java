@@ -69,8 +69,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     protected final transient DefaultMQProducerImpl defaultMQProducerImpl;
 
     /**
-     * 生产者所属组，消息服务器在回查事务状态时会随机选择该组中任何一
-     * 个生产者发起事务回查请求
+     * 生产者所属组，消息服务器在回查事务状态时会随机选择该组中任何一个生产者发起事务回查请求
      * Producer group conceptually aggregates all producer instances of exactly same role, which is particularly
      * important when transactional messages are involved.
      * </p>
@@ -294,8 +293,11 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      */
     @Override
     public void start() throws MQClientException {
+        // 设置生产者组
         this.setProducerGroup(withNamespace(this.producerGroup));
+        // 启动defaultMQProducer的实现类
         this.defaultMQProducerImpl.start();
+        // 启动消息轨迹转发处理器
         if (null != traceDispatcher) {
             try {
                 traceDispatcher.start(this.getNamesrvAddr(), this.getAccessChannel());

@@ -16,14 +16,15 @@
  */
 package org.apache.rocketmq.client.impl;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.log.ClientLogger;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.remoting.RPCHook;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class MQClientManager {
     private final static InternalLogger log = ClientLogger.getLog();
@@ -44,13 +45,23 @@ public class MQClientManager {
         return getAndCreateMQClientInstance(clientConfig, null);
     }
 
+    /**
+     * 生成或者查询client实例
+     * @param clientConfig client配置
+     * @param rpcHook 钩子
+     * @return client实例
+     */
     public MQClientInstance getAndCreateMQClientInstance(final ClientConfig clientConfig, RPCHook rpcHook) {
+        // 根据ip和client名生成clientId
         String clientId = clientConfig.buildMQClientId();
+        // 从map中查找clientId，若找不到则创建
         MQClientInstance instance = this.factoryTable.get(clientId);
         if (null == instance) {
+            // 创建并初始化一个client实例
             instance =
                 new MQClientInstance(clientConfig.cloneClientConfig(),
                     this.factoryIndexGenerator.getAndIncrement(), clientId, rpcHook);
+            // 将client实例保存到map中
             MQClientInstance prev = this.factoryTable.putIfAbsent(clientId, instance);
             if (prev != null) {
                 instance = prev;
