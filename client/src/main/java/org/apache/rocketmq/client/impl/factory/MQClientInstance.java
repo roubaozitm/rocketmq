@@ -223,19 +223,23 @@ public class MQClientInstance {
         return mqList;
     }
 
+    /**
+     * client示例启动
+     * @throws MQClientException
+     */
     public void start() throws MQClientException {
-
+        // 防止并发启动
         synchronized (this) {
             switch (this.serviceState) {
                 case CREATE_JUST:
                     this.serviceState = ServiceState.START_FAILED;
-                    // If not specified,looking address from name server
+                    // 获取NameServer服务地址
                     if (null == this.clientConfig.getNamesrvAddr()) {
                         this.mQClientAPIImpl.fetchNameServerAddr();
                     }
-                    // Start request-response channel
+                    // 启动通信服务NettyRemotingClient
                     this.mQClientAPIImpl.start();
-                    // Start various schedule tasks
+                    // 启动定时任务
                     this.startScheduledTask();
                     // Start pull service
                     this.pullMessageService.start();
@@ -259,6 +263,7 @@ public class MQClientInstance {
     }
 
     private void startScheduledTask() {
+        // 若NameServer地址为空，每2分钟拉取一次NameServer地址
         if (null == this.clientConfig.getNamesrvAddr()) {
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
@@ -273,6 +278,7 @@ public class MQClientInstance {
             }, 1000 * 10, 1000 * 60 * 2, TimeUnit.MILLISECONDS);
         }
 
+        // 定时更新路由信息
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -386,7 +392,7 @@ public class MQClientInstance {
         return newOffsetTable;
     }
     /**
-     * Remove offline broker
+     * 清理掉下线的Broker
      */
     private void cleanOfflineBroker() {
         try {
