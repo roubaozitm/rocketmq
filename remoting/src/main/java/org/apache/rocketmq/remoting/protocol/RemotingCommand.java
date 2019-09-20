@@ -13,6 +13,11 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ * +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ * +           +                      +             +                +
+ *    消息长度     序列化类型&消息头长度      消息头数据      消息主体数据
+ * +           +                      +             +                +
+ * +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  */
 package org.apache.rocketmq.remoting.protocol;
 
@@ -69,12 +74,19 @@ public class RemotingCommand {
         }
     }
 
+    // 请求操作码，应答方根据不同的请求码进行不同的业务处理
     private int code;
+    // 请求方实现的语言
     private LanguageCode language = LanguageCode.JAVA;
+    // 请求方程序的版本
     private int version = 0;
+    // 相当于reqeustId，在同一个连接上的不同请求标识码，与响应消息中的相对应
     private int opaque = requestId.getAndIncrement();
+    // 区分是普通RPC还是onewayRPC得标志
     private int flag = 0;
+    // 传输自定义文本信息
     private String remark;
+    // 请求自定义扩展信息
     private HashMap<String, String> extFields;
     private transient CommandCustomHeader customHeader;
 
@@ -141,7 +153,13 @@ public class RemotingCommand {
         return decode(byteBuffer);
     }
 
+    /**
+     * 解码
+     * @param byteBuffer
+     * @return
+     */
     public static RemotingCommand decode(final ByteBuffer byteBuffer) {
+        // 总长度
         int length = byteBuffer.limit();
         int oriHeaderLen = byteBuffer.getInt();
         int headerLength = getHeaderLength(oriHeaderLen);
@@ -325,19 +343,25 @@ public class RemotingCommand {
         return name;
     }
 
+    /**
+     * 编码，格式见类注释
+     * @return
+     */
     public ByteBuffer encode() {
-        // 1> header length size
+        // 消息头长度
         int length = 4;
 
-        // 2> header data length
+        // 将消息头编码成byte[]
         byte[] headerData = this.headerEncode();
+        // 计算头部长度
         length += headerData.length;
 
-        // 3> body data length
+        // 计算消息体长度
         if (this.body != null) {
             length += body.length;
         }
 
+        // 分配ByteBuffer, 这边加了4，这是因为在消息总长度的计算中没有将存储头部长度的4个字节计算在内
         ByteBuffer result = ByteBuffer.allocate(4 + length);
 
         // length

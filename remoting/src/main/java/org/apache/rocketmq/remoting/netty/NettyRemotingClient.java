@@ -149,6 +149,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
 
     @Override
     public void start() {
+        // 创建一个事件处理器
         this.defaultEventExecutorGroup = new DefaultEventExecutorGroup(
             nettyClientConfig.getClientWorkerThreads(),
             new ThreadFactory() {
@@ -170,6 +171,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
             .handler(new ChannelInitializer<SocketChannel>() {
                 @Override
                 public void initChannel(SocketChannel ch) throws Exception {
+                    // 为channel创建一个pipeline执行链
                     ChannelPipeline pipeline = ch.pipeline();
                     if (nettyClientConfig.isUseTLS()) {
                         if (null != sslContext) {
@@ -179,16 +181,19 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
                             log.warn("Connections are insecure as SSLContext is null!");
                         }
                     }
+                    // 添加ChannelHandler，处理channel
                     pipeline.addLast(
                         defaultEventExecutorGroup,
                         new NettyEncoder(),
                         new NettyDecoder(),
                         new IdleStateHandler(0, 0, nettyClientConfig.getClientChannelMaxIdleTimeSeconds()),
                         new NettyConnectManageHandler(),
+                        // 处理返回结果
                         new NettyClientHandler());
                 }
             });
 
+        // 每秒扫描一次响应表
         this.timer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
@@ -514,11 +519,24 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
         return null;
     }
 
+    /**
+     * 异步发送请求
+     * @param addr           请求地址
+     * @param request        请求
+     * @param timeoutMillis  超时时间
+     * @param invokeCallback 请求回调
+     * @throws InterruptedException
+     * @throws RemotingConnectException
+     * @throws RemotingTooMuchRequestException
+     * @throws RemotingTimeoutException
+     * @throws RemotingSendRequestException
+     */
     @Override
     public void invokeAsync(String addr, RemotingCommand request, long timeoutMillis, InvokeCallback invokeCallback)
         throws InterruptedException, RemotingConnectException, RemotingTooMuchRequestException, RemotingTimeoutException,
         RemotingSendRequestException {
         long beginStartTime = System.currentTimeMillis();
+        // 根据addr获取通信channel
         final Channel channel = this.getAndCreateChannel(addr);
         if (channel != null && channel.isActive()) {
             try {
@@ -527,6 +545,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
                 if (timeoutMillis < costTime) {
                     throw new RemotingTooMuchRequestException("invokeAsync call timeout");
                 }
+                // 真正做完发送请求动作的是在NettyRemotingAbstract抽象类的invokeAsyncImpl方法里
                 this.invokeAsyncImpl(channel, request, timeoutMillis - costTime, invokeCallback);
             } catch (RemotingSendRequestException e) {
                 log.warn("invokeAsync: send request exception, so close the channel[{}]", addr);
@@ -624,6 +643,9 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
         }
     }
 
+    /**
+     * 接收请求并处理
+     */
     class NettyClientHandler extends SimpleChannelInboundHandler<RemotingCommand> {
 
         @Override

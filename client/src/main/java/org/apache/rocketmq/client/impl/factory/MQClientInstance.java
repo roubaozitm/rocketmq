@@ -220,7 +220,7 @@ public class MQClientInstance {
                     this.pullMessageService.start();
                     // 启动rebalance服务
                     this.rebalanceService.start();
-                    // 启动Producer（又启动一遍？）
+                    // 启动Producer（奇怪的是this.defaultMQProducer是一个新的defaultMQProducer）
                     this.defaultMQProducer.getDefaultMQProducerImpl().start(false);
                     log.info("the client factory [{}] start OK", this.clientId);
                     this.serviceState = ServiceState.RUNNING;
