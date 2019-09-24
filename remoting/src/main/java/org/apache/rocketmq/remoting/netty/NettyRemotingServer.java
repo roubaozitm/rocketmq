@@ -100,6 +100,7 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
         this.nettyServerConfig = nettyServerConfig;
         this.channelEventListener = channelEventListener;
 
+        // public线程池
         int publicThreadNums = nettyServerConfig.getServerCallbackExecutorThreads();
         if (publicThreadNums <= 0) {
             publicThreadNums = 4;
@@ -114,6 +115,9 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             }
         });
 
+        // eventLoopGroupBoss负责监听TCP网络连接请求，并发送给eventLoopGroupSelector线程池；
+        // eventLoopGroupSelector负责将建立好连接的socket注册到selector上去（RocketMQ的源码中会自动根据OS的类型选择NIO和Epoll，
+        // 也可以通过参数配置），然后监听真正的网络数据。拿到网络数据后，再丢给Worker线程池
         if (useEpoll()) {
             this.eventLoopGroupBoss = new EpollEventLoopGroup(1, new ThreadFactory() {
                 private AtomicInteger threadIndex = new AtomicInteger(0);
@@ -179,9 +183,10 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             && Epoll.isAvailable();
     }
 
-    // 启动监听server
+    // 启动监听server，采用了1+N+M1+M2模型。
     @Override
     public void start() {
+        // 创建Worker线程池，专门用于处理Netty网络通信相关的（包括编码/解码、空闲链接管理、网络连接管理以及网络请求处理）
         this.defaultEventExecutorGroup = new DefaultEventExecutorGroup(
             nettyServerConfig.getServerWorkerThreads(),
             new ThreadFactory() {
@@ -194,17 +199,26 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
                 }
             });
 
+        // 准备ChannelPipeline的Handler
         prepareSharableHandlers();
 
+        /**
+         * 首先来看下 RocketMQ NettyServer 的 Reactor 线程模型，
+         * 一个 Reactor（eventLoopGroupBoss） 主线程负责监听 TCP 连接请求;
+         * 建立好连接后丢给 Reactor 线程池（eventLoopGroupSelector），它负责将建立好连接的 socket 注册到 selector
+         * 上去（这里有两种方式，NIO和Epoll，可配置），然后监听真正的网络数据;
+         * 拿到网络数据后，再丢给 Worker 线程池（defaultEventExecutorGroup）;
+         * RocketMQ-> Java NIO的1+N+M模型：1个acceptor线程，N个IO线程，M1个worker 线程
+         */
         ServerBootstrap childHandler =
             this.serverBootstrap.group(this.eventLoopGroupBoss, this.eventLoopGroupSelector)
                 .channel(useEpoll() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
-                .option(ChannelOption.SO_BACKLOG, 1024)
-                .option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.SO_KEEPALIVE, false)
-                .childOption(ChannelOption.TCP_NODELAY, true)
-                .childOption(ChannelOption.SO_SNDBUF, nettyServerConfig.getServerSocketSndBufSize())
-                .childOption(ChannelOption.SO_RCVBUF, nettyServerConfig.getServerSocketRcvBufSize())
+                .option(ChannelOption.SO_BACKLOG, 1024) // 服务端处理客户端连接请求是顺序处理的，所以同一时间只能处理一个客户端连接，多个客户端来的时候，服务端将不能处理的客户端连接请求放在队列中等待处理，backlog参数指定了队列的大小
+                .option(ChannelOption.SO_REUSEADDR, true) // 这个参数表示允许重复使用本地地址和端口
+                .option(ChannelOption.SO_KEEPALIVE, false) // 当设置该选项以后，如果在两小时内没有数据的通信时,TCP会自动发送一个活动探测数据报文。
+                .childOption(ChannelOption.TCP_NODELAY, true) // 该参数的作用就是禁止使用Nagle算法，使用于小数据即时传输
+                .childOption(ChannelOption.SO_SNDBUF, nettyServerConfig.getServerSocketSndBufSize())// 接收缓冲区大小
+                .childOption(ChannelOption.SO_RCVBUF, nettyServerConfig.getServerSocketRcvBufSize()) // 发送缓冲区大小
                 .localAddress(new InetSocketAddress(this.nettyServerConfig.getListenPort()))
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
@@ -212,11 +226,11 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
                         ch.pipeline()
                             .addLast(defaultEventExecutorGroup, HANDSHAKE_HANDLER_NAME, handshakeHandler)
                             .addLast(defaultEventExecutorGroup,
-                                encoder,
-                                new NettyDecoder(),
+                                encoder, // rocketmq编码器
+                                new NettyDecoder(), // rocketmq解码器
                                 new IdleStateHandler(0, 0, nettyServerConfig.getServerChannelMaxIdleTimeSeconds()),
-                                connectionManageHandler,
-                                serverHandler
+                                connectionManageHandler, // 连接管理器，他负责捕获新连接、连接断开、异常等事件，然后统一调度到NettyEventExecuter处理器处理
+                                serverHandler // 当一个消息经过前面的解码等步骤后，然后调度到channelRead0方法，然后根据消息类型进行分发
                             );
                     }
                 });
@@ -237,6 +251,7 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             this.nettyEventExecutor.start();
         }
 
+        // 定时扫描responseTable,获取返回结果,并且处理超时
         this.timer.scheduleAtFixedRate(new TimerTask() {
 
             @Override

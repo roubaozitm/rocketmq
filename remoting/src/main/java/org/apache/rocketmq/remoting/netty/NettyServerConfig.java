@@ -20,12 +20,12 @@ package org.apache.rocketmq.remoting.netty;
  * NameServer网络参数
  */
 public class NettyServerConfig implements Cloneable {
-    // NameServer监听端口
+    // 监听端口
     private int listenPort = 8888;
-    // Netty业务线程池线程个数
+    // Netty业务线程池线程个数，Netty网络设计，
+    // 根据业务类型(RequestCode)会创建不同的线程池，比如处理消息发送、消息消费、心跳检测等。
     private int serverWorkerThreads = 8;
-    // serverCallbackExecutorThreads是Netty public任务线程池线程个数，Netty网络设计，
-    // 根据业务类型会创建不同的线程池，比如处理消息发送、消息消费、心跳检测等。
+    // serverCallbackExecutorThreads是Netty public任务线程池线程个数
     // 如果该业务类型(RequestCode)未注册线程池，则由public线程池执行。
     private int serverCallbackExecutorThreads = 0;
     // IO线程池线程个数，主要是NameServer、Broker端解析请求、返回相应的线程个数，
