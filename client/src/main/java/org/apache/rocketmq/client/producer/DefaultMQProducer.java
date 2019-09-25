@@ -319,8 +319,8 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
-     * Fetch message queues of topic <code>topic</code>, to which we may send/publish messages.
      * 查找该主题下所有的消息队列
+     * Fetch message queues of topic <code>topic</code>, to which we may send/publish messages.
      *
      * @param topic Topic to fetch.
      * @return List of message queues readily to send messages to
