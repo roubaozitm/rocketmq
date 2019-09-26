@@ -26,6 +26,7 @@ public class MQFaultStrategy {
     private final static InternalLogger log = ClientLogger.getLog();
     private final LatencyFaultTolerance<String> latencyFaultTolerance = new LatencyFaultToleranceImpl();
 
+    // 是否开启Broker故障延迟功能
     private boolean sendLatencyFaultEnable = false;
 
     private long[] latencyMax = {50L, 100L, 550L, 1000L, 2000L, 3000L, 15000L};
@@ -62,23 +63,31 @@ public class MQFaultStrategy {
      * @return
      */
     public MessageQueue selectOneMessageQueue(final TopicPublishInfo tpInfo, final String lastBrokerName) {
+        // 是否开启Broker故障延迟功能
         if (this.sendLatencyFaultEnable) {
             try {
+                // 队列发送次数自增
                 int index = tpInfo.getSendWhichQueue().getAndIncrement();
+                // 遍历topic的所有队列
                 for (int i = 0; i < tpInfo.getMessageQueueList().size(); i++) {
+                    // 计算选中的队列
                     int pos = Math.abs(index++) % tpInfo.getMessageQueueList().size();
                     if (pos < 0)
                         pos = 0;
                     MessageQueue mq = tpInfo.getMessageQueueList().get(pos);
+                    // 判断该队列所在的Broker是否可用
                     if (latencyFaultTolerance.isAvailable(mq.getBrokerName())) {
                         if (null == lastBrokerName || mq.getBrokerName().equals(lastBrokerName))
                             return mq;
                     }
                 }
 
+                // 尝试从规避的Broker中选择一个可用的Broker
                 final String notBestBroker = latencyFaultTolerance.pickOneAtLeast();
+                // 获取该Broker的写队列数
                 int writeQueueNums = tpInfo.getQueueIdByBroker(notBestBroker);
                 if (writeQueueNums > 0) {
+                    // 取余挑选其中一个队列
                     final MessageQueue mq = tpInfo.selectOneMessageQueue();
                     if (notBestBroker != null) {
                         mq.setBrokerName(notBestBroker);
@@ -92,6 +101,7 @@ public class MQFaultStrategy {
                 log.error("Error occurred when selecting message queue", e);
             }
 
+            // 取余挑选其中一个队列
             return tpInfo.selectOneMessageQueue();
         }
 
