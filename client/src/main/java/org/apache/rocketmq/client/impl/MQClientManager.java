@@ -57,7 +57,7 @@ public class MQClientManager {
         // 从map中查找clientId，若找不到则创建
         MQClientInstance instance = this.factoryTable.get(clientId);
         if (null == instance) {
-            // 创建并初始化一个client实例
+            // 创建并初始化一个client实例(注意这里面又创建了一个DefaultMQProducer)
             instance =
                 new MQClientInstance(clientConfig.cloneClientConfig(),
                     this.factoryIndexGenerator.getAndIncrement(), clientId, rpcHook);

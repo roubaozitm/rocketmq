@@ -122,6 +122,7 @@ public class MQClientInstance {
 
         this.rebalanceService = new RebalanceService(this);
 
+        // 这里新创建了一个defaultMQProducer？
         this.defaultMQProducer = new DefaultMQProducer(MixAll.CLIENT_INNER_PRODUCER_GROUP);
         this.defaultMQProducer.resetClientConfig(clientConfig);
 
@@ -220,7 +221,7 @@ public class MQClientInstance {
                     this.pullMessageService.start();
                     // 启动rebalance服务
                     this.rebalanceService.start();
-                    // 启动Producer（奇怪的是this.defaultMQProducer是一个新的defaultMQProducer）
+                    // 启动client的默认Producer（创建client实例的时候创建的）
                     this.defaultMQProducer.getDefaultMQProducerImpl().start(false);
                     log.info("the client factory [{}] start OK", this.clientId);
                     this.serviceState = ServiceState.RUNNING;
