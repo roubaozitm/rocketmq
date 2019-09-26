@@ -78,8 +78,10 @@ public class MQFaultStrategy {
 
                 // 尝试从规避的Broker中选择一个可用的Broker
                 final String notBestBroker = latencyFaultTolerance.pickOneAtLeast();
+                // 获取该Broker的写队列数
                 int writeQueueNums = tpInfo.getQueueIdByBroker(notBestBroker);
                 if (writeQueueNums > 0) {
+                    // 取余挑选其中一个队列
                     final MessageQueue mq = tpInfo.selectOneMessageQueue();
                     if (notBestBroker != null) {
                         mq.setBrokerName(notBestBroker);
@@ -93,6 +95,7 @@ public class MQFaultStrategy {
                 log.error("Error occurred when selecting message queue", e);
             }
 
+            // 取余挑选其中一个队列
             return tpInfo.selectOneMessageQueue();
         }
 

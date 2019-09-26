@@ -115,6 +115,9 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
             '}';
     }
 
+    /**
+     * 失败条目
+     */
     class FaultItem implements Comparable<FaultItem> {
         private final String name;
         private volatile long currentLatency;
