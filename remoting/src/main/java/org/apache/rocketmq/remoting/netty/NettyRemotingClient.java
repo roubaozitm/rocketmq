@@ -404,11 +404,13 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
             return getAndCreateNameserverChannel();
         }
 
+        // 查询是否创建过channel
         ChannelWrapper cw = this.channelTables.get(addr);
         if (cw != null && cw.isOK()) {
             return cw.getChannel();
         }
 
+        // 创建channel
         return this.createChannel(addr);
     }
 
@@ -460,18 +462,21 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
     }
 
     private Channel createChannel(final String addr) throws InterruptedException {
+        // 释放之前的channel通道
         ChannelWrapper cw = this.channelTables.get(addr);
         if (cw != null && cw.isOK()) {
             cw.getChannel().close();
             channelTables.remove(addr);
         }
 
+        // 锁住Channel表
         if (this.lockChannelTables.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
             try {
+                // 是否可以创建新的连接
                 boolean createNewConnection;
                 cw = this.channelTables.get(addr);
+                // 移除老的连接记录
                 if (cw != null) {
-
                     if (cw.isOK()) {
                         cw.getChannel().close();
                         this.channelTables.remove(addr);
@@ -487,9 +492,11 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
                 }
 
                 if (createNewConnection) {
+                    // 创建新的连接
                     ChannelFuture channelFuture = this.bootstrap.connect(RemotingHelper.string2SocketAddress(addr));
                     log.info("createChannel: begin to connect remote host[{}] asynchronously", addr);
                     cw = new ChannelWrapper(channelFuture);
+                    // 存储新连接
                     this.channelTables.put(addr, cw);
                 }
             } catch (Exception e) {
@@ -561,6 +568,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
     @Override
     public void invokeOneway(String addr, RemotingCommand request, long timeoutMillis) throws InterruptedException,
         RemotingConnectException, RemotingTooMuchRequestException, RemotingTimeoutException, RemotingSendRequestException {
+        // 根据地址获取通信Channel
         final Channel channel = this.getAndCreateChannel(addr);
         if (channel != null && channel.isActive()) {
             try {
