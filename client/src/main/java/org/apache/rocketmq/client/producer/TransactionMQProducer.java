@@ -53,6 +53,7 @@ public class TransactionMQProducer extends DefaultMQProducer {
 
     @Override
     public void start() throws MQClientException {
+        // defaultMQProducer实现类初始化事务
         this.defaultMQProducerImpl.initTransactionEnv();
         super.start();
     }
@@ -82,11 +83,13 @@ public class TransactionMQProducer extends DefaultMQProducer {
     @Override
     public TransactionSendResult sendMessageInTransaction(final Message msg,
         final Object arg) throws MQClientException {
+        // 发送前检查事务监听器，用于执行本地事务
         if (null == this.transactionListener) {
             throw new MQClientException("TransactionListener is null", null);
         }
 
         msg.setTopic(NamespaceUtil.wrapNamespace(this.getNamespace(), msg.getTopic()));
+        // 发送事务消息
         return this.defaultMQProducerImpl.sendMessageInTransaction(msg, null, arg);
     }
 
