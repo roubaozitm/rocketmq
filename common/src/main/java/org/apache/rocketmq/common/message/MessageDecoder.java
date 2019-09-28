@@ -412,6 +412,16 @@ public class MessageDecoder {
         return map;
     }
 
+    /**
+     * 消息编码
+     * 格式：
+     * +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+     * | TOTALSIZE | MAGICCOD | BODYCRC | FLAG | BODYSIZE | BODY | PROPERTIESLENGTH | PROPERTIES |
+     * +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+     *
+     * @param message 消息
+     * @return
+     */
     public static byte[] encodeMessage(Message message) {
         //only need flag, body, properties
         byte[] body = message.getBody();
@@ -483,17 +493,24 @@ public class MessageDecoder {
         return message;
     }
 
+    /**
+     * 批量消息编码
+     * @param messages 消息list
+     * @return
+     */
     public static byte[] encodeMessages(List<Message> messages) {
         //TO DO refactor, accumulate in one buffer, avoid copies
         List<byte[]> encodedMessages = new ArrayList<byte[]>(messages.size());
         int allSize = 0;
         for (Message message : messages) {
+            // 消息编码
             byte[] tmp = encodeMessage(message);
             encodedMessages.add(tmp);
             allSize += tmp.length;
         }
         byte[] allBytes = new byte[allSize];
         int pos = 0;
+        // 将多条消息字节数组拷贝到一个字节数组中
         for (byte[] bytes : encodedMessages) {
             System.arraycopy(bytes, 0, allBytes, pos, bytes.length);
             pos += bytes.length;
