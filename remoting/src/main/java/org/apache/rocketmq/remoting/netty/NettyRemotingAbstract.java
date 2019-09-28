@@ -497,7 +497,7 @@ public abstract class NettyRemotingAbstract {
             // 将ResponseFuture放入响应表responseTable
             this.responseTable.put(opaque, responseFuture);
             try {
-                // 发送请求，设置监听响应事件
+                // 发送请求，设置监听响应事件，响应会在processMessageReceived方法中处理
                 channel.writeAndFlush(request).addListener(new ChannelFutureListener() {
                     @Override
                     public void operationComplete(ChannelFuture f) throws Exception {
