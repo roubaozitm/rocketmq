@@ -32,15 +32,21 @@ public class MappedFileQueue {
 
     private static final int DELETE_FILES_BATCH_MAX = 10;
 
+    // 存储目录
     private final String storePath;
 
+    // 单个文件的存储大小
     private final int mappedFileSize;
 
+    // MappedFile文件集合
     private final CopyOnWriteArrayList<MappedFile> mappedFiles = new CopyOnWriteArrayList<MappedFile>();
 
+    // 创建MappedFile服务类
     private final AllocateMappedFileService allocateMappedFileService;
 
+    // 当前刷盘指针， 表示该指针之前的所有数据全部持久化到磁盘
     private long flushedWhere = 0;
+    // 当前数据提交指针，内存中ByteBuffer当前的写指针
     private long committedWhere = 0;
 
     private volatile long storeTimestamp = 0;
@@ -71,6 +77,11 @@ public class MappedFileQueue {
         }
     }
 
+    /**
+     * 根据时间查找文件
+     * @param timestamp
+     * @return
+     */
     public MappedFile getMappedFileByTime(final long timestamp) {
         Object[] mfs = this.copyMappedFiles(0);
 
@@ -296,6 +307,10 @@ public class MappedFileQueue {
         return true;
     }
 
+    /**
+     * 获取所有文件的最小偏移
+     * @return
+     */
     public long getMinOffset() {
 
         if (!this.mappedFiles.isEmpty()) {
@@ -310,6 +325,10 @@ public class MappedFileQueue {
         return -1;
     }
 
+    /**
+     * 返回所有文件的最大偏移
+     * @return
+     */
     public long getMaxOffset() {
         MappedFile mappedFile = getLastMappedFile();
         if (mappedFile != null) {
@@ -450,13 +469,23 @@ public class MappedFileQueue {
         return result;
     }
 
+    /**
+     * MappedFile提交（从堆外内存提交到mappedFile内存映射）
+     * @param commitLeastPages
+     * @return 返回true表示不需要提交(transientStorePoolEnable为false时,因为会直接写入到mappedFile内存映射,不需要提交,因此会返回true)
+     */
     public boolean commit(final int commitLeastPages) {
         boolean result = true;
+        // 根据偏移找到MappedFile
         MappedFile mappedFile = this.findMappedFileByOffset(this.committedWhere, this.committedWhere == 0);
         if (mappedFile != null) {
+            // 提交，返回提交后MappedFile偏移（transientStorePoolEnable为false时不需要提交）
             int offset = mappedFile.commit(commitLeastPages);
+            // where为当前MappedFile初始偏移 + 提交后本MappedFile偏移
             long where = mappedFile.getFileFromOffset() + offset;
+            // 若数据有提交，result为false
             result = where == this.committedWhere;
+            // 刷新提交指针
             this.committedWhere = where;
         }
 
@@ -464,7 +493,7 @@ public class MappedFileQueue {
     }
 
     /**
-     * Finds a mapped file by offset.
+     * 根据位移寻找文件
      *
      * @param offset Offset.
      * @param returnFirstOnNotFound If the mapped file is not found, then return the first one.
@@ -475,6 +504,7 @@ public class MappedFileQueue {
             MappedFile firstMappedFile = this.getFirstMappedFile();
             MappedFile lastMappedFile = this.getLastMappedFile();
             if (firstMappedFile != null && lastMappedFile != null) {
+                // 给定的位移大于最大值或者小于最小值，报错
                 if (offset < firstMappedFile.getFileFromOffset() || offset >= lastMappedFile.getFileFromOffset() + this.mappedFileSize) {
                     LOG_ERROR.warn("Offset not matched. Request offset: {}, firstOffset: {}, lastOffset: {}, mappedFileSize: {}, mappedFiles count: {}",
                         offset,
@@ -483,6 +513,7 @@ public class MappedFileQueue {
                         this.mappedFileSize,
                         this.mappedFiles.size());
                 } else {
+                    // 根据offset计算文件偏移
                     int index = (int) ((offset / this.mappedFileSize) - (firstMappedFile.getFileFromOffset() / this.mappedFileSize));
                     MappedFile targetFile = null;
                     try {
@@ -490,11 +521,13 @@ public class MappedFileQueue {
                     } catch (Exception ignored) {
                     }
 
+                    // 判断计算出的文件是否包含给定的偏移
                     if (targetFile != null && offset >= targetFile.getFileFromOffset()
                         && offset < targetFile.getFileFromOffset() + this.mappedFileSize) {
                         return targetFile;
                     }
 
+                    // 如果计算出的文件不是要找的文件，就遍历查找
                     for (MappedFile tmpMappedFile : this.mappedFiles) {
                         if (offset >= tmpMappedFile.getFileFromOffset()
                             && offset < tmpMappedFile.getFileFromOffset() + this.mappedFileSize) {
@@ -503,6 +536,7 @@ public class MappedFileQueue {
                     }
                 }
 
+                // 没有找到
                 if (returnFirstOnNotFound) {
                     return firstMappedFile;
                 }

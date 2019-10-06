@@ -43,36 +43,65 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class MappedFile extends ReferenceResource {
+    // 操作系统每页大小，默认4k
     public static final int OS_PAGE_SIZE = 1024 * 4;
     protected static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
+    // 当前JVM实例中MappedFile的虚拟内存
     private static final AtomicLong TOTAL_MAPPED_VIRTUAL_MEMORY = new AtomicLong(0);
 
+    // 当前JVM实例中MappedFile对象个数
     private static final AtomicInteger TOTAL_MAPPED_FILES = new AtomicInteger(0);
+    // 当前该文件的写指针，从0开始(内存映射文件中的写指针)
     protected final AtomicInteger wrotePosition = new AtomicInteger(0);
+    // 当前文件的提交指针，如果开启transientStorePoolEnable，则数据会存储在TransientStorePool中，
+    // 然后提交到内存映射ByteBuffer中，再刷写到磁盘
     protected final AtomicInteger committedPosition = new AtomicInteger(0);
+    // 刷写到磁盘指针，该指针之前的数据持久化到磁盘中
     private final AtomicInteger flushedPosition = new AtomicInteger(0);
+    // 文件大小
     protected int fileSize;
+    // 文件通道
     protected FileChannel fileChannel;
-    /**
-     * Message will put to here first, and then reput to FileChannel if writeBuffer is not null.
-     */
+
+    // 堆内存ByteBuffer，如果不为空，数据首先将存储在该Buffer中，然后提交到MappedFile对应的内存映射文件Buffer
+    // Message will put to here first, and then reput to FileChannel if writeBuffer is not null.
     protected ByteBuffer writeBuffer = null;
+    // 堆内存池
     protected TransientStorePool transientStorePool = null;
+    // 文件名
     private String fileName;
+    // 该文件的初始偏移量
     private long fileFromOffset;
+    // 物理文件
     private File file;
+    // 物理文件对应的内存映射Buffer
     private MappedByteBuffer mappedByteBuffer;
+    // 文件最后一次内容写入时间
     private volatile long storeTimestamp = 0;
+    // 是否是MappedFileQueue队列中第一个文件
     private boolean firstCreateInQueue = false;
 
     public MappedFile() {
     }
 
+    /**
+     * transientStorePoolEnable为false的情况的构造函数
+     * @param fileName
+     * @param fileSize
+     * @throws IOException
+     */
     public MappedFile(final String fileName, final int fileSize) throws IOException {
         init(fileName, fileSize);
     }
 
+    /**
+     * transientStorePoolEnable为true的情况的构造函数
+     * @param fileName
+     * @param fileSize
+     * @param transientStorePool
+     * @throws IOException
+     */
     public MappedFile(final String fileName, final int fileSize,
         final TransientStorePool transientStorePool) throws IOException {
         init(fileName, fileSize, transientStorePool);
@@ -142,14 +171,36 @@ public class MappedFile extends ReferenceResource {
         return TOTAL_MAPPED_VIRTUAL_MEMORY.get();
     }
 
+    /**
+     * MappedFile初始化
+     * transientStorePoolEnable为true的情况，表示内容先存储在堆外内存，然后通过Commit线程将数据提交到文件内存映射Buffer中，
+     * 再通过Flush线程将内存映射Buffer中的数据持久化到磁盘中
+     *
+     * @param fileName
+     * @param fileSize
+     * @param transientStorePool
+     * @throws IOException
+     */
     public void init(final String fileName, final int fileSize,
         final TransientStorePool transientStorePool) throws IOException {
+        // 初始化文件映射Buffer
         init(fileName, fileSize);
+        // 从transientStorePool堆外内存池中分配堆外内存
         this.writeBuffer = transientStorePool.borrowBuffer();
         this.transientStorePool = transientStorePool;
     }
 
+    /**
+     * MappedFile初始化
+     * transientStorePoolEnable为false的情况，表示内容数据直接提交到文件内存映射Buffer中，
+     * 再通过Flush线程将内存映射Buffer中的数据持久化到磁盘中
+     *
+     * @param fileName
+     * @param fileSize
+     * @throws IOException
+     */
     private void init(final String fileName, final int fileSize) throws IOException {
+        // 文件名、文件大小、初始偏移的初始化
         this.fileName = fileName;
         this.fileSize = fileSize;
         this.file = new File(fileName);
@@ -159,9 +210,12 @@ public class MappedFile extends ReferenceResource {
         ensureDirOK(this.file.getParent());
 
         try {
+            // 创建文件Channel和文件映射Buffer
             this.fileChannel = new RandomAccessFile(this.file, "rw").getChannel();
             this.mappedByteBuffer = this.fileChannel.map(MapMode.READ_WRITE, 0, fileSize);
+            // 更新JVM实例中MappedFile的虚拟内存的值
             TOTAL_MAPPED_VIRTUAL_MEMORY.addAndGet(fileSize);
+            // 更新JVM实例中MappedFile对象个数
             TOTAL_MAPPED_FILES.incrementAndGet();
             ok = true;
         } catch (FileNotFoundException e) {
@@ -201,20 +255,21 @@ public class MappedFile extends ReferenceResource {
         assert messageExt != null;
         assert cb != null;
 
-        // 获取当前的文件位置
+        // 获取当前的文件写入位置
         int currentPos = this.wrotePosition.get();
 
         if (currentPos < this.fileSize) {
-            // 创建一个byteBuffer，起始位置为当前位置
+            // 获取byteBuffer，writeBuffer为一个与commitlog同样大小的堆外内存，mappedByteBuffer为commitlog直接映射的内存
             ByteBuffer byteBuffer = writeBuffer != null ? writeBuffer.slice() : this.mappedByteBuffer.slice();
+            // 设置byteBuffer起始位置为当前位置
             byteBuffer.position(currentPos);
             // 初始化返回结果
             AppendMessageResult result;
             if (messageExt instanceof MessageExtBrokerInner) {
-                // 单条消息，实现类：DefaultAppendMessageCallback TODO:待阅读
+                // 单条消息，实现类：DefaultAppendMessageCallback
                 result = cb.doAppend(this.getFileFromOffset(), byteBuffer, this.fileSize - currentPos, (MessageExtBrokerInner) messageExt);
             } else if (messageExt instanceof MessageExtBatch) {
-                // 批量消息，实现类：DefaultAppendMessageCallback TODO:待阅读
+                // 批量消息，实现类：DefaultAppendMessageCallback
                 result = cb.doAppend(this.getFileFromOffset(), byteBuffer, this.fileSize - currentPos, (MessageExtBatch) messageExt);
             } else {
                 return new AppendMessageResult(AppendMessageStatus.UNKNOWN_ERROR);
@@ -304,13 +359,21 @@ public class MappedFile extends ReferenceResource {
         return this.getFlushedPosition();
     }
 
+    /**
+     * MappedFile提交实现（从堆外内存提交到mappedFile内存映射）
+     * @param commitLeastPages commitLeastPages为本次提交最小的页数
+     * @return
+     */
     public int commit(final int commitLeastPages) {
+        // transientStorePoolEnable为false，writeBuffer为空，表示直接写入mappedFile内存映射，不需要提交
         if (writeBuffer == null) {
             //no need to commit data to file channel, so just regard wrotePosition as committedPosition.
             return this.wrotePosition.get();
         }
+        // commitLeastPages为本次提交最小的页数，如果待提交数据不满commitLeastPages，则不执行本次提交操作，待下次提交
         if (this.isAbleToCommit(commitLeastPages)) {
             if (this.hold()) {
+                // 提交
                 commit0(commitLeastPages);
                 this.release();
             } else {
@@ -333,11 +396,15 @@ public class MappedFile extends ReferenceResource {
 
         if (writePos - this.committedPosition.get() > 0) {
             try {
+                // 首先创建writeBuffer的共享缓存区，然后将新创建的position回退到上一次提交的位置(lastCommittedPosition)，
+                // 设置limit为writePos(当前最大有效数据指针)
                 ByteBuffer byteBuffer = writeBuffer.slice();
                 byteBuffer.position(lastCommittedPosition);
                 byteBuffer.limit(writePos);
+                // 把lastCommittedPosition到writePos的数据复制(写入)到FileChannel中
                 this.fileChannel.position(lastCommittedPosition);
                 this.fileChannel.write(byteBuffer);
+                // 更新committedPosition指针为writePos
                 this.committedPosition.set(writePos);
             } catch (Throwable e) {
                 log.error("Error occurred when commit data to FileChannel.", e);
@@ -361,13 +428,17 @@ public class MappedFile extends ReferenceResource {
     }
 
     protected boolean isAbleToCommit(final int commitLeastPages) {
+        // 上一次提交的指针
         int flush = this.committedPosition.get();
+        // 当前writeBuffe的写指针
         int write = this.wrotePosition.get();
 
+        // 文件已满，直接返回
         if (this.isFull()) {
             return true;
         }
 
+        // 如果commitLeastPages小于0表示只要存在脏页就提交
         if (commitLeastPages > 0) {
             return ((write / OS_PAGE_SIZE) - (flush / OS_PAGE_SIZE)) >= commitLeastPages;
         }

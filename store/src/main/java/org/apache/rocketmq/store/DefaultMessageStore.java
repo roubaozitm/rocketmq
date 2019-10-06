@@ -365,7 +365,7 @@ public class DefaultMessageStore implements MessageStore {
      * @return                              存储结果
      */
     public PutMessageResult putMessage(MessageExtBrokerInner msg) {
-        // 存储服务是否停止运行，拒绝写入
+        // 存储服务停止运行，拒绝写入
         if (this.shutdown) {
             log.warn("message store has shutdown, so putMessage is forbidden");
             return new PutMessageResult(PutMessageStatus.SERVICE_NOT_AVAILABLE, null);
@@ -382,7 +382,7 @@ public class DefaultMessageStore implements MessageStore {
             return new PutMessageResult(PutMessageStatus.SERVICE_NOT_AVAILABLE, null);
         }
 
-        // 当前RocketMQ不支持写入
+        // 当前RocketMQ不支持写入，拒绝写入
         if (!this.runningFlags.isWriteable()) {
             // 每50000次打印一条报警日志
             long value = this.printTimes.getAndIncrement();

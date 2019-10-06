@@ -16,20 +16,17 @@
  */
 package org.apache.rocketmq.store;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.ServiceLoader;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import org.apache.rocketmq.common.ServiceThread;
 import org.apache.rocketmq.common.UtilAll;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.store.config.BrokerRole;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ServiceLoader;
+import java.util.concurrent.*;
 
 /**
  * Create MappedFile in advance
@@ -163,8 +160,11 @@ public class AllocateMappedFileService extends ServiceThread {
             if (req.getMappedFile() == null) {
                 long beginTime = System.currentTimeMillis();
 
+                // 两种不同的写入文件的优化策略
                 MappedFile mappedFile;
                 if (messageStore.getMessageStoreConfig().isTransientStorePoolEnable()) {
+                    // RocketMQ会单独申请一个与commitlog同样大小的堆外内存，该堆外内存将使用内存锁定，确保不会被置换到虚拟内存中去。
+                    // 消息首先追加到堆外内存，然后提交到与物理文件的内存映射内存中，再flush到磁盘
                     try {
                         mappedFile = ServiceLoader.load(MappedFile.class).iterator().next();
                         mappedFile.init(req.getFilePath(), req.getFileSize(), messageStore.getTransientStorePool());
@@ -173,6 +173,7 @@ public class AllocateMappedFileService extends ServiceThread {
                         mappedFile = new MappedFile(req.getFilePath(), req.getFileSize(), messageStore.getTransientStorePool());
                     }
                 } else {
+                    // 消息直接追加到与commitlog直接映射的内存中，然后刷写到磁盘中
                     mappedFile = new MappedFile(req.getFilePath(), req.getFileSize());
                 }
 
