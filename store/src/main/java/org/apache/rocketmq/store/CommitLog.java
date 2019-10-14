@@ -831,9 +831,15 @@ public class CommitLog {
         return -1;
     }
 
+    /**
+     * 获取当前 Commitlog 目录最小偏移量
+     * @return
+     */
     public long getMinOffset() {
+        // 获取第一个文件
         MappedFile mappedFile = this.mappedFileQueue.getFirstMappedFile();
         if (mappedFile != null) {
+            // 如果该文件可用，则返回该文件的起始偏移量，否则返回下一个文件的起始偏移量
             if (mappedFile.isAvailable()) {
                 return mappedFile.getFileFromOffset();
             } else {
@@ -844,16 +850,31 @@ public class CommitLog {
         return -1;
     }
 
+    /**
+     * 根据偏移量与消息长度查找消息
+     * @param offset
+     * @param size
+     * @return
+     */
     public SelectMappedBufferResult getMessage(final long offset, final int size) {
+        // 获取MappedFile大小
         int mappedFileSize = this.defaultMessageStore.getMessageStoreConfig().getMappedFileSizeCommitLog();
+        // 根据offset获取commitlog文件
         MappedFile mappedFile = this.mappedFileQueue.findMappedFileByOffset(offset, offset == 0);
         if (mappedFile != null) {
+            // 计算文件偏移
             int pos = (int) (offset % mappedFileSize);
+            // 根据文件偏移和长度返回消息
             return mappedFile.selectMappedBuffer(pos, size);
         }
         return null;
     }
 
+    /**
+     * 根据该offset返回下一个文件的起始偏移量
+     * @param offset
+     * @return offset - (offset % mappedFileSize) + mappedFileSize
+     */
     public long rollNextFile(final long offset) {
         int mappedFileSize = this.defaultMessageStore.getMessageStoreConfig().getMappedFileSizeCommitLog();
         return offset + mappedFileSize - offset % mappedFileSize;

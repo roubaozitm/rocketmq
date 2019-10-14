@@ -20,6 +20,17 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * 消息索引文件头
+ *
+ * 文件格式:
+ *
+ * |<-------------------------------------- 40字节 IndexHead ------------------------------------->|
+ * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ * | beginTimestamp | endTimestamp | beginPhyoffset | endPhyoffset | hashSlot count | index count |
+ * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ * |<---- 8字节 ---->|<-- 8字节 --->|<--- 8字节 ---->|<--- 8字节 --->|<---- 4字节 ---->|<--- 4字节 -->|
+ */
 public class IndexHeader {
     public static final int INDEX_HEADER_SIZE = 40;
     private static int beginTimestampIndex = 0;

@@ -14,19 +14,33 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/**
+ * RocketMQ为了适应消息消费的检索需求，设计了消息消费队列文件(Consumequeue)，该
+ * 文件可以看成是Commitlog关于消息消费的“索引”文件。其构建机制是当消息到达Commitlog文件后，
+ * 由专门的线程产生消息转发任务，从而构建消息消费队列文件与下文提到的索引文件
+ *
+ * 存储格式
+ * |<----- 8字节 ------>|<- 4字节 ->|<---- 8字节 ---->|
+ * +++++++++++++++++++++++++++++++++++++++++++++++++++
+ * |  commitlog offset  |   size   |   tag hashcode  |
+ * +++++++++++++++++++++++++++++++++++++++++++++++++++
+ */
 package org.apache.rocketmq.store;
 
-import java.io.File;
-import java.nio.ByteBuffer;
-import java.util.List;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.store.config.StorePathConfigHelper;
 
+import java.io.File;
+import java.nio.ByteBuffer;
+import java.util.List;
+
 public class ConsumeQueue {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
+    // ConsumeQueue一条信息的长度（8字节+4字节+8字节），详见类注释
     public static final int CQ_STORE_UNIT_SIZE = 20;
     private static final InternalLogger LOG_ERROR = InternalLoggerFactory.getLogger(LoggerName.STORE_ERROR_LOGGER_NAME);
 
@@ -38,6 +52,7 @@ public class ConsumeQueue {
     private final ByteBuffer byteBufferIndex;
 
     private final String storePath;
+    // ConsumeQueue的映射大小
     private final int mappedFileSize;
     private long maxPhysicOffset = -1;
     private volatile long minLogicOffset = 0;
@@ -151,10 +166,17 @@ public class ConsumeQueue {
         }
     }
 
+    /**
+     * 根据消息存储时间来查找消息偏移
+     * @param timestamp
+     * @return
+     */
     public long getOffsetInQueueByTime(final long timestamp) {
+        // 根据时间获取文件
         MappedFile mappedFile = this.mappedFileQueue.getMappedFileByTime(timestamp);
         if (mappedFile != null) {
             long offset = 0;
+            // low是文件的最小偏移
             int low = minLogicOffset > mappedFile.getFileFromOffset() ? (int) (minLogicOffset - mappedFile.getFileFromOffset()) : 0;
             int high = 0;
             int midOffset = -1, targetOffset = -1, leftOffset = -1, rightOffset = -1;
@@ -163,19 +185,25 @@ public class ConsumeQueue {
             SelectMappedBufferResult sbr = mappedFile.selectMappedBuffer(0);
             if (null != sbr) {
                 ByteBuffer byteBuffer = sbr.getByteBuffer();
+                // high是最大偏移
                 high = byteBuffer.limit() - CQ_STORE_UNIT_SIZE;
                 try {
+                    // 二分查找
                     while (high >= low) {
+                        // 中间的位移
                         midOffset = (low + high) / (2 * CQ_STORE_UNIT_SIZE) * CQ_STORE_UNIT_SIZE;
                         byteBuffer.position(midOffset);
+                        // 获取commitlog中消息的物理偏移
                         long phyOffset = byteBuffer.getLong();
                         int size = byteBuffer.getInt();
+                        // phyOffset < minPhysicOffset 该消息已被删除
                         if (phyOffset < minPhysicOffset) {
                             low = midOffset + CQ_STORE_UNIT_SIZE;
                             leftOffset = midOffset;
                             continue;
                         }
 
+                        // 获取该消息存储时间
                         long storeTime =
                             this.defaultMessageStore.getCommitLog().pickupStoreTimestamp(phyOffset, size);
                         if (storeTime < 0) {
@@ -195,16 +223,17 @@ public class ConsumeQueue {
                     }
 
                     if (targetOffset != -1) {
-
+                        // 恰好找到
                         offset = targetOffset;
                     } else {
                         if (leftIndexValue == -1) {
-
+                            // leftIndexValue == -1 表示该文件最早的消息也比时间戳大，返回该文件最早的消息的偏移
                             offset = rightOffset;
                         } else if (rightIndexValue == -1) {
-
+                            // rightIndexValue == -1 表示该文件最晚的消息也比时间戳小，返回该文件最晚的消息的偏移
                             offset = leftOffset;
                         } else {
+                            // 返回一个距离给定时间最近的消息的偏移
                             offset =
                                 Math.abs(timestamp - leftIndexValue) > Math.abs(timestamp
                                     - rightIndexValue) ? rightOffset : leftOffset;
@@ -483,12 +512,22 @@ public class ConsumeQueue {
         }
     }
 
+    /**
+     * 根据startlndex获取Consumer记录
+     * @param startIndex
+     * @return
+     */
     public SelectMappedBufferResult getIndexBuffer(final long startIndex) {
+        // 获取文件大小
         int mappedFileSize = this.mappedFileSize;
+        // 获取startIndex的物理偏移
         long offset = startIndex * CQ_STORE_UNIT_SIZE;
+        // offset < this.getMinLogicOffset() 说明消息已经被删除
         if (offset >= this.getMinLogicOffset()) {
+            // 根据offset找到文件
             MappedFile mappedFile = this.mappedFileQueue.findMappedFileByOffset(offset);
             if (mappedFile != null) {
+                // 根据文件和文件偏移获取记录
                 SelectMappedBufferResult result = mappedFile.selectMappedBuffer((int) (offset % mappedFileSize));
                 return result;
             }

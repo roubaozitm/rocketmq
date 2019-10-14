@@ -219,6 +219,7 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     /**
+     * 启动
      * @throws Exception
      */
     public void start() throws Exception {
@@ -263,6 +264,7 @@ public class DefaultMessageStore implements MessageStore {
             log.info("[SetReputOffset] maxPhysicalPosInLogicQueue={} clMinOffset={} clMaxOffset={} clConfirmedOffset={}",
                 maxPhysicalPosInLogicQueue, this.commitLog.getMinOffset(), this.commitLog.getMaxOffset(), this.commitLog.getConfirmOffset());
             this.reputMessageService.setReputFromOffset(maxPhysicalPosInLogicQueue);
+            // reputMessageService负责CommitLog消息分发，根据CommitLog文件构建ConsumeQueue、IndexFile文件
             this.reputMessageService.start();
 
             /**
@@ -1809,8 +1811,12 @@ public class DefaultMessageStore implements MessageStore {
         }
     }
 
+    /**
+     * 转发CommitLog文件更新事件服务
+     */
     class ReputMessageService extends ServiceThread {
 
+        // 更新位置
         private volatile long reputFromOffset = 0;
 
         public long getReputFromOffset() {
@@ -1846,27 +1852,37 @@ public class DefaultMessageStore implements MessageStore {
             return this.reputFromOffset < DefaultMessageStore.this.commitLog.getMaxOffset();
         }
 
+        /**
+         * 转发CommitLog文件更新事件服务
+         */
         private void doReput() {
+            // 文件更新位置小于commitlog最小偏移，只能从最小偏移开始更新
             if (this.reputFromOffset < DefaultMessageStore.this.commitLog.getMinOffset()) {
                 log.warn("The reputFromOffset={} is smaller than minPyOffset={}, this usually indicate that the dispatch behind too much and the commitlog has expired.",
                     this.reputFromOffset, DefaultMessageStore.this.commitLog.getMinOffset());
                 this.reputFromOffset = DefaultMessageStore.this.commitLog.getMinOffset();
             }
+            // isCommitLogAvailable()方法判断是否文件更新位置小于commitlog最小偏移
             for (boolean doNext = true; this.isCommitLogAvailable() && doNext; ) {
 
+                // 是否开启副本，如果开启检测更新位置小于commitlog确认位置
                 if (DefaultMessageStore.this.getMessageStoreConfig().isDuplicationEnable()
                     && this.reputFromOffset >= DefaultMessageStore.this.getConfirmOffset()) {
                     break;
                 }
 
+                // 从commitlog读取更新位置的日志
                 SelectMappedBufferResult result = DefaultMessageStore.this.commitLog.getData(reputFromOffset);
                 if (result != null) {
                     try {
+                        // 指针移到消息的起始位置
                         this.reputFromOffset = result.getStartOffset();
 
                         for (int readSize = 0; readSize < result.getSize() && doNext; ) {
+                            // 解析消息
                             DispatchRequest dispatchRequest =
                                 DefaultMessageStore.this.commitLog.checkMessageAndReturnSize(result.getByteBuffer(), false, false);
+                            // 消息长度
                             int size = dispatchRequest.getBufferSize() == -1 ? dispatchRequest.getMsgSize() : dispatchRequest.getBufferSize();
 
                             if (dispatchRequest.isSuccess()) {
@@ -1916,6 +1932,7 @@ public class DefaultMessageStore implements MessageStore {
                         result.release();
                     }
                 } else {
+                    // 读commitlog为空，退出函数
                     doNext = false;
                 }
             }

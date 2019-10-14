@@ -18,9 +18,6 @@ package org.apache.rocketmq.store;
 
 import com.sun.jna.NativeLong;
 import com.sun.jna.Pointer;
-import java.nio.ByteBuffer;
-import java.util.Deque;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
@@ -28,12 +25,23 @@ import org.apache.rocketmq.store.config.MessageStoreConfig;
 import org.apache.rocketmq.store.util.LibC;
 import sun.nio.ch.DirectBuffer;
 
+import java.nio.ByteBuffer;
+import java.util.Deque;
+import java.util.concurrent.ConcurrentLinkedDeque;
+
+/**
+ * 短暂内存池
+ */
 public class TransientStorePool {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
+    // avaliableBuffers个数
     private final int poolSize;
+    // 每个ByteBuffer大小
     private final int fileSize;
+    // ByteBuffer容器，双向队列
     private final Deque<ByteBuffer> availableBuffers;
+    // 存储配置
     private final MessageStoreConfig storeConfig;
 
     public TransientStorePool(final MessageStoreConfig storeConfig) {
@@ -44,16 +52,20 @@ public class TransientStorePool {
     }
 
     /**
+     * 初始化短暂内存池
      * It's a heavy init method.
      */
     public void init() {
         for (int i = 0; i < poolSize; i++) {
+            // 根据配置大小创建DirectByteBuffer
             ByteBuffer byteBuffer = ByteBuffer.allocateDirect(fileSize);
 
+            // 利用com.sun.jna.Library类库将该批内存锁定，避免被置换到交换区，提高存储性能
             final long address = ((DirectBuffer) byteBuffer).address();
             Pointer pointer = new Pointer(address);
             LibC.INSTANCE.mlock(pointer, new NativeLong(fileSize));
 
+            // 保存到双向队列中
             availableBuffers.offer(byteBuffer);
         }
     }

@@ -452,15 +452,22 @@ public class MappedFileQueue {
         return deleteCount;
     }
 
+    // 刷盘
     public boolean flush(final int flushLeastPages) {
         boolean result = true;
+        // 根据偏移找到mapFile
         MappedFile mappedFile = this.findMappedFileByOffset(this.flushedWhere, this.flushedWhere == 0);
         if (mappedFile != null) {
             long tmpTimeStamp = mappedFile.getStoreTimestamp();
+            // 刷盘
             int offset = mappedFile.flush(flushLeastPages);
+            // 计算刷盘后的位置
             long where = mappedFile.getFileFromOffset() + offset;
+            // 未刷盘返回false？？
             result = where == this.flushedWhere;
+            // 更新刷盘后的指针
             this.flushedWhere = where;
+            // flushLeastPages为0，表示只要有未刷数据就要刷盘
             if (0 == flushLeastPages) {
                 this.storeTimestamp = tmpTimeStamp;
             }

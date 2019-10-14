@@ -47,7 +47,7 @@ public class MappedFile extends ReferenceResource {
     public static final int OS_PAGE_SIZE = 1024 * 4;
     protected static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
-    // 当前JVM实例中MappedFile的虚拟内存
+    // 当前JVM实例中MappedFile的虚拟内存大小
     private static final AtomicLong TOTAL_MAPPED_VIRTUAL_MEMORY = new AtomicLong(0);
 
     // 当前JVM实例中MappedFile对象个数
@@ -97,6 +97,7 @@ public class MappedFile extends ReferenceResource {
 
     /**
      * transientStorePoolEnable为true的情况的构造函数
+     * 使用TransientStorePool的原因是为了实现内存锁定，将当前堆外内存一直锁定在内存中，避免被进程将内存交换到磁盘
      * @param fileName
      * @param fileSize
      * @param transientStorePool
@@ -117,12 +118,26 @@ public class MappedFile extends ReferenceResource {
         }
     }
 
+    /**
+     * 释放内存资源
+     * @param buffer 资源
+     */
     public static void clean(final ByteBuffer buffer) {
+        // 由于java的垃圾回收，不能自动是否内存，故需要手动调用Cleaner的clean来释放ByteBuffer
         if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0)
             return;
+        // 调用Cleaner类的clean方法，清理ByteBuffer
+        // 相当于((DirectByteBuffer)buffer).cleaner().clean()
         invoke(invoke(viewed(buffer), "cleaner"), "clean");
     }
 
+    /**
+     * 调用方法，可以调用私有方法
+     * @param target     类
+     * @param methodName 方法
+     * @param args       参数
+     * @return
+     */
     private static Object invoke(final Object target, final String methodName, final Class<?>... args) {
         return AccessController.doPrivileged(new PrivilegedAction<Object>() {
             public Object run() {
@@ -331,15 +346,19 @@ public class MappedFile extends ReferenceResource {
     }
 
     /**
+     * 刷盘
      * @return The current flushed position
      */
     public int flush(final int flushLeastPages) {
+        // 判断是否可以刷盘
         if (this.isAbleToFlush(flushLeastPages)) {
             if (this.hold()) {
+                // 获取刷盘指针
                 int value = getReadPosition();
 
                 try {
-                    //We only append data to fileChannel or mappedByteBuffer, never both.
+                    // We only append data to fileChannel or mappedByteBuffer, never both.
+                    // fileChannel和mappedByteBuffer应该是同时初始化的
                     if (writeBuffer != null || this.fileChannel.position() != 0) {
                         this.fileChannel.force(false);
                     } else {
@@ -349,6 +368,7 @@ public class MappedFile extends ReferenceResource {
                     log.error("Error occurred when force data to disk.", e);
                 }
 
+                // 设置刷盘位置
                 this.flushedPosition.set(value);
                 this.release();
             } else {
@@ -458,10 +478,18 @@ public class MappedFile extends ReferenceResource {
         return this.fileSize == this.wrotePosition.get();
     }
 
+    /**
+     * 根据偏移和消息长度返回消息
+     * @param pos
+     * @param size
+     * @return
+     */
     public SelectMappedBufferResult selectMappedBuffer(int pos, int size) {
+        // 返回最大可读偏移，用于检查是否超过读取范围
         int readPosition = getReadPosition();
         if ((pos + size) <= readPosition) {
             if (this.hold()) {
+                // 读取消息
                 ByteBuffer byteBuffer = this.mappedByteBuffer.slice();
                 byteBuffer.position(pos);
                 ByteBuffer byteBufferNew = byteBuffer.slice();
@@ -495,32 +523,49 @@ public class MappedFile extends ReferenceResource {
         return null;
     }
 
+    /**
+     * 清理资源
+     * @param currentRef 当前的引用次数
+     * @return
+     */
     @Override
     public boolean cleanup(final long currentRef) {
+        // 如果available为true，不清理
         if (this.isAvailable()) {
             log.error("this file[REF:" + currentRef + "] " + this.fileName
                 + " have not shutdown, stop unmapping.");
             return false;
         }
 
+        // 已经清理，直接返回
         if (this.isCleanupOver()) {
             log.error("this file[REF:" + currentRef + "] " + this.fileName
                 + " have cleanup, do not do it again.");
             return true;
         }
 
+        // 清理物理文件对应的内存映射Buffer
         clean(this.mappedByteBuffer);
+        // 修改JVM实例中MappedFile的虚拟内存大小和文件对象数量
         TOTAL_MAPPED_VIRTUAL_MEMORY.addAndGet(this.fileSize * (-1));
         TOTAL_MAPPED_FILES.decrementAndGet();
         log.info("unmap file[REF:" + currentRef + "] " + this.fileName + " OK");
         return true;
     }
 
+    /**
+     * MappedFile 销毁
+     * @param intervalForcibly 拒绝被销毁的最大存活时间
+     * @return
+     */
     public boolean destroy(final long intervalForcibly) {
+        // 释放资源，主要是清理MappedByteBuffer和锁
         this.shutdown(intervalForcibly);
 
+        // 判断是否清理
         if (this.isCleanupOver()) {
             try {
+                // 清理成功，关闭文件通道，删除物理文件
                 this.fileChannel.close();
                 log.info("close file channel " + this.fileName + " OK");
 
@@ -555,6 +600,8 @@ public class MappedFile extends ReferenceResource {
      * @return The max position which have valid data
      */
     public int getReadPosition() {
+        // writeBuffer为空，数据之间写入MappedByteBuffer，故wrotePosition即待刷盘的指针；
+        // writeBuffer不为空，数据需要先写到堆外缓存，再提交到MappedByteBuffer，故提交指针committedPosition为待刷盘的指针
         return this.writeBuffer == null ? this.wrotePosition.get() : this.committedPosition.get();
     }
 
