@@ -404,6 +404,10 @@ public class ConsumeQueue {
         return this.minLogicOffset / CQ_STORE_UNIT_SIZE;
     }
 
+    /**
+     * 写入consumerqueue文件
+     * @param request
+     */
     public void putMessagePositionInfoWrapper(DispatchRequest request) {
         final int maxRetries = 30;
         boolean canWrite = this.defaultMessageStore.getRunningFlags().isCQWriteable();
@@ -423,9 +427,11 @@ public class ConsumeQueue {
                         topic, queueId, request.getCommitLogOffset());
                 }
             }
+            // 写入ConsumerQueue文件
             boolean result = this.putMessagePositionInfo(request.getCommitLogOffset(),
                 request.getMsgSize(), tagsCode, request.getConsumeQueueOffset());
             if (result) {
+                // 写入成功，更新checkpoint文件
                 this.defaultMessageStore.getStoreCheckpoint().setLogicsMsgTimestamp(request.getStoreTimestamp());
                 return;
             } else {
@@ -446,6 +452,14 @@ public class ConsumeQueue {
         this.defaultMessageStore.getRunningFlags().makeLogicsQueueError();
     }
 
+    /**
+     * 写入ConsumerQueue文件
+     * @param offset   Commitlog偏移位置
+     * @param size     长度
+     * @param tagsCode
+     * @param cqOffset ConsumerQueue文件偏移
+     * @return
+     */
     private boolean putMessagePositionInfo(final long offset, final int size, final long tagsCode,
         final long cqOffset) {
 
@@ -454,17 +468,20 @@ public class ConsumeQueue {
             return true;
         }
 
+        // 写入临时缓存，写入长度为20字节
         this.byteBufferIndex.flip();
         this.byteBufferIndex.limit(CQ_STORE_UNIT_SIZE);
         this.byteBufferIndex.putLong(offset);
         this.byteBufferIndex.putInt(size);
         this.byteBufferIndex.putLong(tagsCode);
 
+        // 计算写入文件缓存的位置
         final long expectLogicOffset = cqOffset * CQ_STORE_UNIT_SIZE;
-
+        // 根据写入位置获取文件映射缓存
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile(expectLogicOffset);
         if (mappedFile != null) {
 
+            // 如果是首个ConsumerQueue文件
             if (mappedFile.isFirstCreateInQueue() && cqOffset != 0 && mappedFile.getWrotePosition() == 0) {
                 this.minLogicOffset = expectLogicOffset;
                 this.mappedFileQueue.setFlushedWhere(expectLogicOffset);
@@ -474,7 +491,9 @@ public class ConsumeQueue {
                     + mappedFile.getWrotePosition());
             }
 
+            // 如果不是文件的第一条消息
             if (cqOffset != 0) {
+                // 当前该文件的写指针（从0开始） + 文件的起始偏移
                 long currentLogicOffset = mappedFile.getWrotePosition() + mappedFile.getFileFromOffset();
 
                 if (expectLogicOffset < currentLogicOffset) {
@@ -495,6 +514,7 @@ public class ConsumeQueue {
                 }
             }
             this.maxPhysicOffset = offset + size;
+            // 写入ConsumerQueue
             return mappedFile.appendMessage(this.byteBufferIndex.array());
         }
         return false;

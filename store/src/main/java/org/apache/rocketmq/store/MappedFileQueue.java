@@ -201,7 +201,7 @@ public class MappedFileQueue {
 
     public MappedFile getLastMappedFile(final long startOffset, boolean needCreate) {
         long createOffset = -1;
-        // 获取当前的CommitLog文件
+        // 获取当前的文件
         MappedFile mappedFileLast = getLastMappedFile();
 
         // 不存在，获取文件名
@@ -214,16 +214,16 @@ public class MappedFileQueue {
             createOffset = mappedFileLast.getFileFromOffset() + this.mappedFileSize;
         }
 
-        // 需要创建新的CommitLog文件
+        // 需要创建新的文件
         if (createOffset != -1 && needCreate) {
             // 本文件名
             String nextFilePath = this.storePath + File.separator + UtilAll.offset2FileName(createOffset);
-            // 下个CommitLog文件名
+            // 下个文件名
             String nextNextFilePath = this.storePath + File.separator
                 + UtilAll.offset2FileName(createOffset + this.mappedFileSize);
             MappedFile mappedFile = null;
 
-            // 创建新CommitLog文件，当前线程创建或者专门的服务创建
+            // 创建新文件，当前线程创建或者专门的服务创建
             if (this.allocateMappedFileService != null) {
                 mappedFile = this.allocateMappedFileService.putRequestAndReturnMappedFile(nextFilePath,
                     nextNextFilePath, this.mappedFileSize);
