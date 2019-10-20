@@ -310,11 +310,13 @@ public class MappedFile extends ReferenceResource {
 
         if ((currentPos + data.length) <= this.fileSize) {
             try {
+                // 写入
                 this.fileChannel.position(currentPos);
                 this.fileChannel.write(ByteBuffer.wrap(data));
             } catch (Throwable e) {
                 log.error("Error occurred when append message to mappedFile.", e);
             }
+            // 更新写入位置
             this.wrotePosition.addAndGet(data.length);
             return true;
         }
