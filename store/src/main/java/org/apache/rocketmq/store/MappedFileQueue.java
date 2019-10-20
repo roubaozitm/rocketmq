@@ -152,11 +152,15 @@ public class MappedFileQueue {
         }
     }
 
+    /**
+     * 加载文件
+     * @return
+     */
     public boolean load() {
         File dir = new File(this.storePath);
         File[] files = dir.listFiles();
         if (files != null) {
-            // ascending order
+            // ascending order 排序
             Arrays.sort(files);
             for (File file : files) {
 
@@ -167,6 +171,7 @@ public class MappedFileQueue {
                 }
 
                 try {
+                    // 加载文件
                     MappedFile mappedFile = new MappedFile(file.getPath(), mappedFileSize);
 
                     mappedFile.setWrotePosition(this.mappedFileSize);

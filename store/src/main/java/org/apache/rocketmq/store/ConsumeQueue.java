@@ -99,7 +99,11 @@ public class ConsumeQueue {
         return result;
     }
 
+    /**
+     * 恢复ConsumerQueue
+     */
     public void recover() {
+        // 获取该队列下面的所有ConsumerQueue文件的映射内存
         final List<MappedFile> mappedFiles = this.mappedFileQueue.getMappedFiles();
         if (!mappedFiles.isEmpty()) {
 
