@@ -1268,7 +1268,7 @@ public class DefaultMessageStore implements MessageStore {
 
     private void addScheduleTask() {
 
-        // 定时清理过去任务
+        // 定时清理过期文件
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -1313,7 +1313,7 @@ public class DefaultMessageStore implements MessageStore {
         // }, 1, 1, TimeUnit.HOURS);
     }
 
-    // 定时清理任务
+    // 定时清理过期文件
     private void cleanFilesPeriodically() {
         // 定时清理CommitLog
         this.cleanCommitLogService.run();
@@ -1638,6 +1638,7 @@ public class DefaultMessageStore implements MessageStore {
                 if (manualDelete)
                     this.manualDeleteFileSeveralTimes--;
 
+                // 是否立刻执行清理
                 boolean cleanAtOnce = DefaultMessageStore.this.getMessageStoreConfig().isCleanFileForciblyEnable() && this.cleanImmediately;
 
                 log.info("begin to delete before {} hours file. timeup: {} spacefull: {} manualDeleteFileSeveralTimes: {} cleanAtOnce: {}",
@@ -1649,6 +1650,7 @@ public class DefaultMessageStore implements MessageStore {
 
                 fileReservedTime *= 60 * 60 * 1000;
 
+                // 清理文件
                 deleteCount = DefaultMessageStore.this.commitLog.deleteExpiredFile(fileReservedTime, deletePhysicFilesInterval,
                     destroyMapedFileIntervalForcibly, cleanAtOnce);
                 if (deleteCount > 0) {
@@ -1689,14 +1691,17 @@ public class DefaultMessageStore implements MessageStore {
         }
 
         private boolean isSpaceToDelete() {
+            // 获取CommitLog和ConsumerQueue在磁盘中的最大使用率
             double ratio = DefaultMessageStore.this.getMessageStoreConfig().getDiskMaxUsedSpaceRatio() / 100.0;
 
             cleanImmediately = false;
 
             {
+                // 获取CommitLog硬盘空间的使用率
                 String storePathPhysic = DefaultMessageStore.this.getMessageStoreConfig().getStorePathCommitLog();
                 double physicRatio = UtilAll.getDiskPartitionSpaceUsedPercent(storePathPhysic);
                 if (physicRatio > diskSpaceWarningLevelRatio) {
+                    // 若大于90%，设置磁盘快满了，需要立即清理
                     boolean diskok = DefaultMessageStore.this.runningFlags.getAndMakeDiskFull();
                     if (diskok) {
                         DefaultMessageStore.log.error("physic disk maybe full soon " + physicRatio + ", so mark disk full");
@@ -1704,8 +1709,10 @@ public class DefaultMessageStore implements MessageStore {
 
                     cleanImmediately = true;
                 } else if (physicRatio > diskSpaceCleanForciblyRatio) {
+                    // 若大于85%，需要立即清理
                     cleanImmediately = true;
                 } else {
+                    // 其他情况，
                     boolean diskok = DefaultMessageStore.this.runningFlags.getAndMakeDiskOK();
                     if (!diskok) {
                         DefaultMessageStore.log.info("physic disk space OK " + physicRatio + ", so mark disk ok");
@@ -1718,6 +1725,7 @@ public class DefaultMessageStore implements MessageStore {
                 }
             }
 
+            // ConsumeQueue逻辑，与CommitLog类似
             {
                 String storePathLogics = StorePathConfigHelper
                     .getStorePathConsumeQueue(DefaultMessageStore.this.getMessageStoreConfig().getStorePathRootDir());

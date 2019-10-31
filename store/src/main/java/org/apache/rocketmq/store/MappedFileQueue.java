@@ -368,10 +368,19 @@ public class MappedFileQueue {
         }
     }
 
+    /**
+     * 清理过期文件
+     * @param expiredTime
+     * @param deleteFilesInterval
+     * @param intervalForcibly
+     * @param cleanImmediately
+     * @return
+     */
     public int deleteExpiredFileByTime(final long expiredTime,
         final int deleteFilesInterval,
         final long intervalForcibly,
         final boolean cleanImmediately) {
+        // 拷贝文件对象
         Object[] mfs = this.copyMappedFiles(0);
 
         if (null == mfs)
@@ -381,18 +390,25 @@ public class MappedFileQueue {
         int deleteCount = 0;
         List<MappedFile> files = new ArrayList<MappedFile>();
         if (null != mfs) {
+            // 遍历文件对象
             for (int i = 0; i < mfsLength; i++) {
                 MappedFile mappedFile = (MappedFile) mfs[i];
+                // 计算该文件的最大存活的时间点
                 long liveMaxTimestamp = mappedFile.getLastModifiedTimestamp() + expiredTime;
+                // 文件过期或者需要立刻清理
                 if (System.currentTimeMillis() >= liveMaxTimestamp || cleanImmediately) {
+                    // 销毁MappedFile，删除文件
                     if (mappedFile.destroy(intervalForcibly)) {
+                        // 将销毁成功的MappedFile添加到列表中
                         files.add(mappedFile);
                         deleteCount++;
 
+                        // 一次最多删10个文件
                         if (files.size() >= DELETE_FILES_BATCH_MAX) {
                             break;
                         }
 
+                        // 删除文件之间的时间间隔
                         if (deleteFilesInterval > 0 && (i + 1) < mfsLength) {
                             try {
                                 Thread.sleep(deleteFilesInterval);
@@ -409,6 +425,7 @@ public class MappedFileQueue {
             }
         }
 
+        // 从mappedFiles集合中删除列表中的mappedFile
         deleteExpiredFile(files);
 
         return deleteCount;
