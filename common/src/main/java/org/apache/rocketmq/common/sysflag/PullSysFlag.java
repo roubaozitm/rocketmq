@@ -22,22 +22,34 @@ public class PullSysFlag {
     private final static int FLAG_SUBSCRIPTION = 0x1 << 2;
     private final static int FLAG_CLASS_FILTER = 0x1 << 3;
 
+    /**
+     * 消息拉取系统标记
+     * @param commitOffset
+     * @param suspend
+     * @param subscription
+     * @param classFilter
+     * @return
+     */
     public static int buildSysFlag(final boolean commitOffset, final boolean suspend,
         final boolean subscription, final boolean classFilter) {
         int flag = 0;
 
+        // 从内存中读取的消费进度大于0，则设置该标记位
         if (commitOffset) {
             flag |= FLAG_COMMIT_OFFSET;
         }
 
+        // 消息拉取时支持挂起
         if (suspend) {
             flag |= FLAG_SUSPEND;
         }
 
+        // 消息过滤机制为表达式，则设置该标记位
         if (subscription) {
             flag |= FLAG_SUBSCRIPTION;
         }
 
+        // 消息过滤机制为类过滤模式
         if (classFilter) {
             flag |= FLAG_CLASS_FILTER;
         }
