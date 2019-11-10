@@ -542,7 +542,7 @@ public class ConsumeQueue {
     }
 
     /**
-     * 根据startlndex获取Consumer记录
+     * 根据startIndex获取Consumer记录
      * @param startIndex
      * @return
      */

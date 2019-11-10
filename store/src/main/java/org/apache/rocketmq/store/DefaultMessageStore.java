@@ -536,11 +536,13 @@ public class DefaultMessageStore implements MessageStore {
     public GetMessageResult getMessage(final String group, final String topic, final int queueId, final long offset,
         final int maxMsgNums,
         final MessageFilter messageFilter) {
+        // 是否消息存储关闭
         if (this.shutdown) {
             log.warn("message store has shutdown, so getMessage is forbidden");
             return null;
         }
 
+        // 是否消息存储可读
         if (!this.runningFlags.isReadable()) {
             log.warn("message store is not readable, so getMessage is forbidden " + this.runningFlags.getFlagBits());
             return null;
@@ -553,25 +555,35 @@ public class DefaultMessageStore implements MessageStore {
         long minOffset = 0;
         long maxOffset = 0;
 
+        // 创建返回结果
         GetMessageResult getResult = new GetMessageResult();
 
         final long maxOffsetPy = this.commitLog.getMaxOffset();
 
+        // 根据topic和queueId获取消息队列对象
         ConsumeQueue consumeQueue = findConsumeQueue(topic, queueId);
         if (consumeQueue != null) {
+            // 获取消息队列的最小和最大偏移
             minOffset = consumeQueue.getMinOffsetInQueue();
             maxOffset = consumeQueue.getMaxOffsetInQueue();
 
             if (maxOffset == 0) {
+                // 表示当前消费队列中没有消息
                 status = GetMessageStatus.NO_MESSAGE_IN_QUEUE;
+                // 下次从offset为0开始拉取
                 nextBeginOffset = nextOffsetCorrection(offset, 0);
             } else if (offset < minOffset) {
+                // 表示待拉取消息偏移量小于队列的起始偏移量
                 status = GetMessageStatus.OFFSET_TOO_SMALL;
+                // 下次从offset为minOffset开始拉取
                 nextBeginOffset = nextOffsetCorrection(offset, minOffset);
             } else if (offset == maxOffset) {
+                // 如果待拉取偏移量等于队列最大偏移量
                 status = GetMessageStatus.OFFSET_OVERFLOW_ONE;
+                // 下次依旧从offset开始拉取
                 nextBeginOffset = nextOffsetCorrection(offset, offset);
             } else if (offset > maxOffset) {
+                // 表示偏移量越界
                 status = GetMessageStatus.OFFSET_OVERFLOW_BADLY;
                 if (0 == minOffset) {
                     nextBeginOffset = nextOffsetCorrection(offset, minOffset);
@@ -579,37 +591,50 @@ public class DefaultMessageStore implements MessageStore {
                     nextBeginOffset = nextOffsetCorrection(offset, maxOffset);
                 }
             } else {
+                // 根据offset获取consumerQueue缓存
                 SelectMappedBufferResult bufferConsumeQueue = consumeQueue.getIndexBuffer(offset);
                 if (bufferConsumeQueue != null) {
                     try {
                         status = GetMessageStatus.NO_MATCHED_MESSAGE;
 
+                        // 用于检测每个数据单元所保存的物理偏移量的commitlog数据是否还存在，若不存在则继续解析下一个数据单元
                         long nextPhyFileStartOffset = Long.MIN_VALUE;
                         long maxPhyOffsetPulling = 0;
 
                         int i = 0;
+                        // 过滤器最大消息数
                         final int maxFilterMessageCount = Math.max(16000, maxMsgNums * ConsumeQueue.CQ_STORE_UNIT_SIZE);
                         final boolean diskFallRecorded = this.messageStoreConfig.isDiskFallRecorded();
                         ConsumeQueueExt.CqExtUnit cqExtUnit = new ConsumeQueueExt.CqExtUnit();
+                        // 开始遍历consumerQueue中的记录
                         for (; i < bufferConsumeQueue.getSize() && i < maxFilterMessageCount; i += ConsumeQueue.CQ_STORE_UNIT_SIZE) {
+                            // 读取commitlog中的offset
                             long offsetPy = bufferConsumeQueue.getByteBuffer().getLong();
+                            // 读取消息长度
                             int sizePy = bufferConsumeQueue.getByteBuffer().getInt();
+                            // 读取tag hashcode
                             long tagsCode = bufferConsumeQueue.getByteBuffer().getLong();
 
                             maxPhyOffsetPulling = offsetPy;
 
+                            // 说明之前有通过物理偏移量从commitlog中获取数据未获取到，将nextPhyFileStartOffset重置为了未获取
+                            // 到数据的物理偏移量所在文件的下一个文件
                             if (nextPhyFileStartOffset != Long.MIN_VALUE) {
+                                // 此次解析的数据单元的物理偏移量小于该nextPhyFileStartOffset值，则跳过下面的处理逻辑，继续解析下一个数据单元
                                 if (offsetPy < nextPhyFileStartOffset)
                                     continue;
                             }
 
+                            // 是否有消息在磁盘上
                             boolean isInDisk = checkInDiskByCommitOffset(offsetPy, maxOffsetPy);
 
+                            // 检查此次读取的数据量是否大于了阀值，若大于则停止继续解析，跳出此次遍历
                             if (this.isTheBatchFull(sizePy, maxMsgNums, getResult.getBufferTotalSize(), getResult.getMessageCount(),
                                 isInDisk)) {
                                 break;
                             }
 
+                            // 根据SubscriptionData对象和数据块中的tagsCode进行消息过滤
                             boolean extRet = false, isTagsCodeLegal = true;
                             if (consumeQueue.isExtAddr(tagsCode)) {
                                 extRet = consumeQueue.getExt(tagsCode, cqExtUnit);
@@ -632,16 +657,23 @@ public class DefaultMessageStore implements MessageStore {
                                 continue;
                             }
 
+                            // 从commitlog中获取指定读取偏离量和消息大小的数据
                             SelectMappedBufferResult selectResult = this.commitLog.getMessage(offsetPy, sizePy);
                             if (null == selectResult) {
                                 if (getResult.getBufferTotalSize() == 0) {
                                     status = GetMessageStatus.MESSAGE_WAS_REMOVING;
                                 }
 
+                                /*
+                                 * 获取该物理偏移量offsetPy所在文件的下一个commitlog文件的起始偏移量。因为以该offsetPy为读取开始位置未
+                                 * 获取到数据说明对应的commitlog文件被删除了，应该更新下一次读取位置值nextPhyFileStartOffset等于该被删
+                                 * 文件的下个文件的起始偏移量
+                                 */
                                 nextPhyFileStartOffset = this.commitLog.rollNextFile(offsetPy);
                                 continue;
                             }
 
+                            // todo https://blog.csdn.net/meilong_whpu/article/details/76922182 6.7
                             if (messageFilter != null
                                 && !messageFilter.isMatchedByCommitLog(selectResult.getByteBuffer().slice(), null)) {
                                 if (getResult.getBufferTotalSize() == 0) {
@@ -1218,6 +1250,15 @@ public class DefaultMessageStore implements MessageStore {
         return (maxOffsetPy - offsetPy) > memory;
     }
 
+    /**
+     * 检查此次读取的数据量是否大于了阀值
+     * @param sizePy
+     * @param maxMsgNums
+     * @param bufferTotal
+     * @param messageTotal
+     * @param isInDisk
+     * @return
+     */
     private boolean isTheBatchFull(int sizePy, int maxMsgNums, int bufferTotal, int messageTotal, boolean isInDisk) {
 
         if (0 == bufferTotal || 0 == messageTotal) {
@@ -1229,6 +1270,7 @@ public class DefaultMessageStore implements MessageStore {
         }
 
         if (isInDisk) {
+            // 若是从磁盘中读取数据：一次被拉取的消息字节数不得大于1024 * 64，一次被拉取的消息个数不得大于8
             if ((bufferTotal + sizePy) > this.messageStoreConfig.getMaxTransferBytesOnMessageInDisk()) {
                 return true;
             }
@@ -1237,6 +1279,7 @@ public class DefaultMessageStore implements MessageStore {
                 return true;
             }
         } else {
+            // 若是从内存中读取数据：一次被拉取的消息字节数不得大于1024 * 256，一次被拉取的消息个数不得大于25
             if ((bufferTotal + sizePy) > this.messageStoreConfig.getMaxTransferBytesOnMessageInMemory()) {
                 return true;
             }
