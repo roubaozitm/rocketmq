@@ -533,6 +533,16 @@ public class DefaultMessageStore implements MessageStore {
         return commitLog;
     }
 
+    /**
+     * Broker处理拉取请求
+     * @param group         消费组名称
+     * @param topic         主题名称
+     * @param queueId       队列ID
+     * @param offset        待拉取偏移量
+     * @param maxMsgNums    最大拉取消息条数
+     * @param messageFilter 消息过滤器
+     * @return
+     */
     public GetMessageResult getMessage(final String group, final String topic, final int queueId, final long offset,
         final int maxMsgNums,
         final MessageFilter messageFilter) {
@@ -648,6 +658,7 @@ public class DefaultMessageStore implements MessageStore {
                                 }
                             }
 
+                            // 没有匹配的消息
                             if (messageFilter != null
                                 && !messageFilter.isMatchedByConsumeQueue(isTagsCodeLegal ? tagsCode : null, extRet ? cqExtUnit : null)) {
                                 if (getResult.getBufferTotalSize() == 0) {
@@ -673,7 +684,7 @@ public class DefaultMessageStore implements MessageStore {
                                 continue;
                             }
 
-                            // todo https://blog.csdn.net/meilong_whpu/article/details/76922182 6.7
+                            // 没有匹配的消息
                             if (messageFilter != null
                                 && !messageFilter.isMatchedByCommitLog(selectResult.getByteBuffer().slice(), null)) {
                                 if (getResult.getBufferTotalSize() == 0) {
@@ -685,6 +696,7 @@ public class DefaultMessageStore implements MessageStore {
                             }
 
                             this.storeStatsService.getGetMessageTransferedMsgCount().incrementAndGet();
+                            // 向结果集加入消息
                             getResult.addMessage(selectResult);
                             status = GetMessageStatus.FOUND;
                             nextPhyFileStartOffset = Long.MIN_VALUE;
@@ -695,8 +707,10 @@ public class DefaultMessageStore implements MessageStore {
                             brokerStatsManager.recordDiskFallBehindSize(group, topic, queueId, fallBehind);
                         }
 
+                        // 计算下一条消息
                         nextBeginOffset = offset + (i / ConsumeQueue.CQ_STORE_UNIT_SIZE);
 
+                        // 检查未拉取的消息的大小是否大于最大可使用内存，若大于，则建议从备用Broker拉取消息
                         long diff = maxOffsetPy - maxPhyOffsetPulling;
                         long memory = (long) (StoreUtil.TOTAL_PHYSICAL_MEMORY_SIZE
                             * (this.messageStoreConfig.getAccessMessageInMemoryMaxRatio() / 100.0));

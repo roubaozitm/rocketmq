@@ -318,10 +318,13 @@ public class PullMessageProcessor implements NettyRequestProcessor {
                     response.setCode(ResponseCode.SUCCESS);
                     break;
                 case MESSAGE_WAS_REMOVING:
+                    // 消息存放在下个commitlog文件中
                     response.setCode(ResponseCode.PULL_RETRY_IMMEDIATELY);
                     break;
                 case NO_MATCHED_LOGIC_QUEUE:
+                    // 未找到队列
                 case NO_MESSAGE_IN_QUEUE:
+                    // 队列中未包含消息
                     if (0 != requestHeader.getQueueOffset()) {
                         response.setCode(ResponseCode.PULL_OFFSET_MOVED);
 
@@ -341,18 +344,22 @@ public class PullMessageProcessor implements NettyRequestProcessor {
                     response.setCode(ResponseCode.PULL_RETRY_IMMEDIATELY);
                     break;
                 case OFFSET_FOUND_NULL:
+                    // 消息物理偏移量为空
                     response.setCode(ResponseCode.PULL_NOT_FOUND);
                     break;
                 case OFFSET_OVERFLOW_BADLY:
+                    // offset越界
                     response.setCode(ResponseCode.PULL_OFFSET_MOVED);
                     // XXX: warn and notify me
                     log.info("the request offset: {} over flow badly, broker max offset: {}, consumer: {}",
                         requestHeader.getQueueOffset(), getMessageResult.getMaxOffset(), channel.remoteAddress());
                     break;
                 case OFFSET_OVERFLOW_ONE:
+                    // offset越界一个
                     response.setCode(ResponseCode.PULL_NOT_FOUND);
                     break;
                 case OFFSET_TOO_SMALL:
+                    // offset未在消息队列中
                     response.setCode(ResponseCode.PULL_OFFSET_MOVED);
                     log.info("the request offset too small. group={}, topic={}, requestOffset={}, brokerMinOffset={}, clientIp={}",
                         requestHeader.getConsumerGroup(), requestHeader.getTopic(), requestHeader.getQueueOffset(),
