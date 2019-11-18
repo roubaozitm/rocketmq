@@ -92,9 +92,9 @@ public class PullMessageProcessor implements NettyRequestProcessor {
 
     /**
      * 处理拉取消息请求
-     * @param channel
-     * @param request
-     * @param brokerAllowSuspend
+     * @param channel 网络通道，通过该通道向消息拉取客户端发送响应结果
+     * @param request 消息、拉取请求
+     * @param brokerAllowSuspend Broker 端是否支持挂起
      * @return
      * @throws RemotingCommandException
      */
@@ -460,8 +460,12 @@ public class PullMessageProcessor implements NettyRequestProcessor {
                     }
                     break;
                 case ResponseCode.PULL_NOT_FOUND:
-                    // 根据Broker是否支持暂停和拉取请求是否可以暂停，将消息放到PullRequestHoldService中
+                    /*
+                     * brokerAllowSuspend为true，表示支持挂起，则将响应对象response 设置为null,
+                     * 将不会立即向客户端写入响应，hasSuspendFlag参数在拉取消息时构建的拉取标记，默认为true
+                     */
                     if (brokerAllowSuspend && hasSuspendFlag) {
+                        // 挂起时间
                         long pollingTimeMills = suspendTimeoutMillisLong;
                         if (!this.brokerController.getBrokerConfig().isLongPollingEnable()) {
                             pollingTimeMills = this.brokerController.getBrokerConfig().getShortPollingTimeMills();
@@ -470,8 +474,10 @@ public class PullMessageProcessor implements NettyRequestProcessor {
                         String topic = requestHeader.getTopic();
                         long offset = requestHeader.getQueueOffset();
                         int queueId = requestHeader.getQueueId();
+                        // 重新构造拉取请求
                         PullRequest pullRequest = new PullRequest(request, channel, pollingTimeMills,
                             this.brokerController.getMessageStore().now(), offset, subscriptionData, messageFilter);
+                        // 将消息放到PullRequestHoldService中，后续重新拉取
                         this.brokerController.getPullRequestHoldService().suspendPullRequest(topic, queueId, pullRequest);
                         response = null;
                         break;
@@ -586,12 +592,19 @@ public class PullMessageProcessor implements NettyRequestProcessor {
         }
     }
 
+    /**
+     * 重新拉取消息
+     * @param channel
+     * @param request
+     * @throws RemotingCommandException
+     */
     public void executeRequestWhenWakeup(final Channel channel,
         final RemotingCommand request) throws RemotingCommandException {
         Runnable run = new Runnable() {
             @Override
             public void run() {
                 try {
+                    // 拉取消息，brokerAllowSuspend为false，表示未拉取到消息不会再挂起消息
                     final RemotingCommand response = PullMessageProcessor.this.processRequest(channel, request, false);
 
                     if (response != null) {

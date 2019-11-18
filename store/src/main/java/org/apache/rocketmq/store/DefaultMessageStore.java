@@ -2013,10 +2013,10 @@ public class DefaultMessageStore implements MessageStore {
                                     // 更新ConsumerQueue文件和Index文件
                                     DefaultMessageStore.this.doDispatch(dispatchRequest);
 
-                                    // Master && Consumer拉模式
+                                    // Master && Broker开启延迟拉取消息服务
                                     if (BrokerRole.SLAVE != DefaultMessageStore.this.getMessageStoreConfig().getBrokerRole()
                                         && DefaultMessageStore.this.brokerConfig.isLongPollingEnable()) {
-                                        // 通知Consumer拉取消息
+                                        // 通知延迟拉取消息服务新消息到达
                                         DefaultMessageStore.this.messageArrivingListener.arriving(dispatchRequest.getTopic(),
                                             dispatchRequest.getQueueId(), dispatchRequest.getConsumeQueueOffset() + 1,
                                             dispatchRequest.getTagsCode(), dispatchRequest.getStoreTimestamp(),
