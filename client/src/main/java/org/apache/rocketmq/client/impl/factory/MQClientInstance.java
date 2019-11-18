@@ -1006,6 +1006,7 @@ public class MQClientInstance {
             MQConsumerInner impl = entry.getValue();
             if (impl != null) {
                 try {
+                    // 每个Consumer实例执行DefaultMQPushConsumerImpl的doRebalance方法
                     impl.doRebalance();
                 } catch (Throwable e) {
                     log.error("doRebalance exception", e);
@@ -1101,7 +1102,14 @@ public class MQClientInstance {
         return 0;
     }
 
+    /**
+     * 从Broker中获取该消费组内当前所有的client ID
+     * @param topic
+     * @param group
+     * @return
+     */
     public List<String> findConsumerIdList(final String topic, final String group) {
+        // 随机选择一个该topic下的Broker
         String brokerAddr = this.findBrokerAddrByTopic(topic);
         if (null == brokerAddr) {
             this.updateTopicRouteInfoFromNameServer(topic);
@@ -1110,6 +1118,9 @@ public class MQClientInstance {
 
         if (null != brokerAddr) {
             try {
+                // 从Broker中获取所有本消费者的client信息。Broker为什么会存在消费组内所有消费者的信息呢?
+                // 我们不妨回忆一下消费者在启动的时候会向MQClientInstance中注册消费者，然后MQClientInstance会向
+                // 所有的Broker发送心跳包，心跳包中包含MQClientInstance的消费者信息。
                 return this.mQClientAPIImpl.getConsumerIdListByGroup(brokerAddr, group, 3000);
             } catch (Exception e) {
                 log.warn("getConsumerIdListByGroup exception, " + brokerAddr + " " + group, e);
@@ -1119,6 +1130,11 @@ public class MQClientInstance {
         return null;
     }
 
+    /**
+     * 随机获取一个该topic下的Broker
+     * @param topic
+     * @return
+     */
     public String findBrokerAddrByTopic(final String topic) {
         TopicRouteData topicRouteData = this.topicRouteTable.get(topic);
         if (topicRouteData != null) {

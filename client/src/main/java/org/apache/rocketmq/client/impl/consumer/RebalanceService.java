@@ -32,11 +32,15 @@ public class RebalanceService extends ServiceThread {
         this.mqClientFactory = mqClientFactory;
     }
 
+    /**
+     * 启动rebalance服务
+     */
     @Override
     public void run() {
         log.info(this.getServiceName() + " service started");
 
         while (!this.isStopped()) {
+            // 默认每20秒执行一次
             this.waitForRunning(waitInterval);
             this.mqClientFactory.doRebalance();
         }
